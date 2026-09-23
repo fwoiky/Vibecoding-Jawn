@@ -12,16 +12,15 @@ A small, beginner-friendly Python project for an ENGR-126 demo. It:
    prediction, its confidence, and a breakdown of confidence for every
    digit 0-9.
 
-All the code lives in the `digit_recognizer/` folder.
+Everything is **one file**: `number_recognizer.py`. Just open it in
+PyCharm and run it — no other files to copy, no folder structure to set
+up.
 
 ```
-digit_recognizer/
-  app.py            <- RUN THIS. The Tkinter window / buttons / dashboard.
-  model.py          <- Defines the neural network (a small CNN).
-  data.py           <- Loads and prepares the MNIST dataset.
-  preprocess.py     <- Turns a phone photo into an MNIST-like image.
-  requirements.txt  <- Exact libraries needed.
-  saved_model/      <- Where the trained model gets saved (created for you).
+number_recognizer.py  <- RUN THIS. The whole program.
+requirements.txt      <- Exact libraries needed.
+PLANNING.md            <- One-page project plan/status (for your own reference).
+saved_model/            <- Where the trained model gets saved (created for you).
 ```
 
 ---
@@ -69,7 +68,7 @@ behind the newest Python release.
    window; it should already be using your new 3.11 virtual environment)
    and run:
    ```
-   pip install -r digit_recognizer/requirements.txt
+   pip install -r requirements.txt
    ```
 
 5. **Verify:** in the same terminal, run `python --version` — it should now
@@ -85,11 +84,10 @@ for that project — your 3.11 and 3.14 installs stay untouched.
 
 With the virtual environment set up and dependencies installed:
 
-- In PyCharm, right-click `digit_recognizer/app.py` and choose **Run**.
+- In PyCharm, right-click `number_recognizer.py` and choose **Run**.
 - Or from a terminal (with the virtual environment active):
   ```
-  cd digit_recognizer
-  python app.py
+  python number_recognizer.py
   ```
 
 A window titled "Teaching a Neural Network to Read Handwriting" opens with
@@ -118,7 +116,7 @@ Click **Train Model**.
     that's the network visibly learning.
 - When it finishes, the status bar shows the final test accuracy (usually
   around 98-99%), and the trained model is automatically saved to
-  `digit_recognizer/saved_model/digit_model.keras`.
+  `saved_model/digit_model.keras`.
 
 ### Later runs: skip retraining
 
@@ -155,9 +153,10 @@ screen.
 
 A phone photo looks nothing like an MNIST training image (it has a paper
 background, shadows, and the digit could be anywhere in the frame, any
-size, any thickness). `preprocess.py` fixes this step by step, and the
-processed result is shown right in the app so the transformation is
-visible to the audience:
+size, any thickness). The `preprocess_for_model()` function in
+`number_recognizer.py` fixes this step by step, and the processed result
+is shown right in the app so the transformation is visible to the
+audience:
 
 1. **Grayscale** — color doesn't matter for digit shape.
 2. **Shadow/lighting correction** — a blurred copy of the photo estimates
@@ -224,7 +223,7 @@ In plain terms, without heavy math:
 | "This file could not be opened as an image" | The file may be corrupted or not actually an image — try re-saving/re-exporting the photo. |
 | "No digit could be detected in this image" | Use a photo with a single, clearly dark (or bright) digit against a plain, evenly lit background, filling a good portion of the frame. |
 | MNIST download fails (first Train click) | Check your internet connection — the first training run needs to download the dataset once (~11 MB). |
-| "Missing required libraries" message on startup | Run `pip install -r digit_recognizer/requirements.txt` inside your 3.11 virtual environment. |
+| "Missing required libraries" message on startup | Run `pip install -r requirements.txt` inside your 3.11 virtual environment. |
 | Training seems to freeze the window | This is expected — the dashboard updates once per epoch (not continuously), and the window is busy for the ~1-3 minutes training takes. |
 
 ---
@@ -232,6 +231,5 @@ In plain terms, without heavy math:
 ## 7. Retraining / resetting
 
 To force a completely fresh model, either click **Retrain Model** in the
-app, or manually delete the file
-`digit_recognizer/saved_model/digit_model.keras` and click **Train Model**
-again.
+app, or manually delete the file `saved_model/digit_model.keras` and click
+**Train Model** again.
