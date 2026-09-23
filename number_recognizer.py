@@ -65,13 +65,22 @@ except ImportError:
 # Where the trained model is saved/loaded from.
 MODEL_PATH = "saved_model/digit_model.keras"
 
-# Maximum passes over the full training set. In practice, training usually
-# stops earlier than this once accuracy stops improving (see EarlyStopping
-# in _train_model) -- this is just a ceiling. With the bigger network below,
-# expect training to take roughly 10-20 minutes on a normal laptop CPU,
-# not a couple of minutes.
-EPOCHS = 40
+# Training runs indefinitely -- click "Stop Training" in the app whenever
+# you want it to stop, rather than after a fixed number of passes. This is
+# just a hard safety ceiling in case it's left running unattended.
+MAX_EPOCHS = 100_000
+
+# Each image is processed in small batches (not all 60,000 at once -- that
+# would need far more memory than a laptop has). This many images per
+# batch:
 BATCH_SIZE = 128
+
+# ...and this many batches make up one "epoch" shown on the dashboard. The
+# full training set is 60,000 images / 128 per batch = ~469 batches; using
+# fewer than that per epoch means each epoch covers less data, so it
+# finishes faster and the dashboard updates more often -- the network
+# still sees the rest of the data on the epochs that follow.
+STEPS_PER_EPOCH = 150
 
 # How many test images to show live in the training dashboard.
 NUM_SAMPLE_PREDICTIONS = 8
@@ -390,7 +399,7 @@ class DashboardCallback(tf.keras.callbacks.Callback):
         self.sample_labels = sample_labels
 
     def on_epoch_begin(self, epoch, logs=None):
-        self.app.set_status(f"Training epoch {epoch + 1} of {EPOCHS}...")
+        self.app.set_status(f"Training epoch {epoch + 1}... (click 'Stop Training' any time)")
 
     def on_epoch_end(self, epoch, logs=None):
         logs = logs or {}
@@ -402,6 +411,11 @@ class DashboardCallback(tf.keras.callbacks.Callback):
             sample_labels=self.sample_labels,
             sample_predictions=predictions,
         )
+        # Checked once per epoch (not continuously) -- update_dashboard()
+        # just processed pending GUI events, so a "Stop Training" click is
+        # already reflected in self.app.stop_requested by this point.
+        if self.app.stop_requested:
+            self.model.stop_training = True
 
 
 class DigitRecognizerApp:
@@ -418,6 +432,7 @@ class DigitRecognizerApp:
         self.train_accs, self.test_accs = [], []
         self.displayed_photo = None
         self.displayed_processed_photo = None
+        self.stop_requested = False
 
         self._configure_style()
         self._build_layout()
@@ -507,6 +522,21 @@ class DigitRecognizerApp:
             foreground=[("disabled", COLOR_INK_MUTED)],
         )
 
+        # "Stop Training" -- status-red, only enabled while training runs.
+        style.configure(
+            "Danger.TButton",
+            background=COLOR_CRITICAL,
+            foreground="#ffffff",
+            font=("TkDefaultFont", 10, "bold"),
+            padding=(14, 8),
+            borderwidth=0,
+        )
+        style.map(
+            "Danger.TButton",
+            background=[("active", "#a82f2f"), ("disabled", COLOR_GRIDLINE)],
+            foreground=[("disabled", COLOR_INK_MUTED)],
+        )
+
         style.configure("TLabelframe", background=COLOR_SURFACE, borderwidth=1, relief="solid")
         style.configure(
             "TLabelframe.Label",
@@ -550,6 +580,15 @@ class DigitRecognizerApp:
         )
         train_button.pack(side=tk.LEFT, padx=(0, 8))
         self.main_buttons.append(train_button)
+
+        self.stop_button = ttk.Button(
+            button_bar,
+            text="Stop Training",
+            command=self.on_stop_clicked,
+            state=tk.DISABLED,
+            style="Danger.TButton",
+        )
+        self.stop_button.pack(side=tk.LEFT, padx=8)
 
         load_button = ttk.Button(
             button_bar, text="Load Saved Model", command=self.on_load_clicked, style="Secondary.TButton"
@@ -753,9 +792,16 @@ class DigitRecognizerApp:
         self._run_prediction_on_image(file_path)
 
     # ---------------- Training ----------------
+    def on_stop_clicked(self):
+        self.stop_requested = True
+        self.set_status("Stopping after this epoch...")
+        self.stop_button.configure(state=tk.DISABLED)
+
     def _train_model(self):
         self.set_buttons_enabled(False)
         self.test_button.configure(state=tk.DISABLED)
+        self.stop_button.configure(state=tk.NORMAL)
+        self.stop_requested = False
         try:
             if self.x_train is None:
                 self.set_status("Downloading/loading MNIST dataset...")
@@ -776,25 +822,24 @@ class DigitRecognizerApp:
 
             callback = DashboardCallback(self, sample_images, sample_labels)
 
-            # Stop automatically once test accuracy stops improving for 6
-            # epochs in a row, and roll back to the best-performing epoch's
-            # weights (instead of whatever epoch happened to run last).
-            early_stop = tf.keras.callbacks.EarlyStopping(
-                monitor="val_accuracy", patience=6, restore_best_weights=True
-            )
             # If progress stalls, shrink the learning rate so training can
             # keep inching accuracy up instead of plateauing.
             reduce_lr = tf.keras.callbacks.ReduceLROnPlateau(
                 monitor="val_loss", factor=0.5, patience=3, min_lr=1e-5
             )
 
+            # epochs is a very high ceiling, not a target -- training keeps
+            # going, checking after every epoch whether "Stop Training" was
+            # clicked (see DashboardCallback.on_epoch_end), until either you
+            # stop it or that ceiling is reached.
             self.model.fit(
                 self.x_train,
                 self.y_train,
                 validation_data=(self.x_test, self.y_test),
-                epochs=EPOCHS,
+                epochs=MAX_EPOCHS,
+                steps_per_epoch=STEPS_PER_EPOCH,
                 batch_size=BATCH_SIZE,
-                callbacks=[callback, early_stop, reduce_lr],
+                callbacks=[callback, reduce_lr],
                 verbose=0,
             )
 
@@ -803,7 +848,7 @@ class DigitRecognizerApp:
             self.model.save(MODEL_PATH)
 
             self.set_status(
-                f"Training complete! Final test accuracy: {final_acc * 100:.2f}% (model saved to {MODEL_PATH})"
+                f"Training stopped. Final test accuracy: {final_acc * 100:.2f}% (model saved to {MODEL_PATH})"
             )
             self.test_button.configure(state=tk.NORMAL)
         except Exception as exc:  # noqa: BLE001
@@ -811,6 +856,7 @@ class DigitRecognizerApp:
             self.set_status("Training failed. See the error message above.")
         finally:
             self.set_buttons_enabled(True)
+            self.stop_button.configure(state=tk.DISABLED)
 
     def update_dashboard(self, epoch, logs, sample_images, sample_labels, sample_predictions):
         self.train_losses.append(logs.get("loss"))
@@ -818,7 +864,7 @@ class DigitRecognizerApp:
         self.train_accs.append(logs.get("accuracy"))
         self.test_accs.append(logs.get("val_accuracy"))
 
-        self.epoch_var.set(f"Epoch: {epoch + 1}/{EPOCHS}")
+        self.epoch_var.set(f"Epoch: {epoch + 1}")
         self.train_loss_var.set(f"Train Loss: {logs.get('loss'):.3f}")
         self.test_loss_var.set(f"Test Loss: {logs.get('val_loss'):.3f}")
         self.train_acc_var.set(f"Train Accuracy: {logs.get('accuracy') * 100:.2f}%")

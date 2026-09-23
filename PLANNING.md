@@ -17,11 +17,14 @@ from a photo of your own handwriting. ENGR-126 midterm demo.
 ## What the program does
 
 1. **Train Model** — loads MNIST, builds a small CNN (with light data
-   augmentation and batch normalization for extra accuracy), trains up to
-   40 epochs with early stopping (~10-20 min on CPU). After every epoch, a
-   dashboard updates live: loss graph, accuracy graph, and 8 sample digits
-   whose guesses flip from red (wrong) to green (correct) as the network
-   improves.
+   augmentation and batch normalization for extra accuracy), and **trains
+   indefinitely** until you click **Stop Training**. Each epoch only
+   covers part of the data (not the full 60,000 images), so epochs finish
+   in roughly 10-20 seconds on CPU and the dashboard updates often; the
+   network still works through the rest of the data over subsequent
+   epochs. After every epoch, a dashboard updates live: loss graph,
+   accuracy graph, and 8 sample digits whose guesses flip from red (wrong)
+   to green (correct) as the network improves.
 2. Saves the trained model to `saved_model/digit_model.keras` automatically.
 3. **Load Saved Model** — skips training on future runs.
 4. **Test My Handwriting** — pick a photo of a digit you wrote. The app:
@@ -48,8 +51,9 @@ from a photo of your own handwriting. ENGR-126 midterm demo.
   a plain background — very cluttered photos may fail with a clear
   "No digit could be detected" error rather than a wrong guess.
 - Training happens on the main thread, so the window is "busy" (not
-  frozen — the dashboard updates once per epoch) for the ~10-20 minutes
-  training takes.
+  frozen — the dashboard updates once per epoch) for as long as you let
+  it run. There's no fixed end point; you decide when it's trained enough
+  and click **Stop Training**.
 - Typical final test accuracy on MNIST: ~99.2-99.5%. **99.9% is not a
   realistic target** for a network this size — even research models
   tuned specifically for MNIST rarely clear ~99.7-99.8%, and that's with

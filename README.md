@@ -118,11 +118,15 @@ Click **Train Model**.
 
 - The first click downloads the MNIST dataset (~11 MB, needs internet,
   cached afterward so this only happens once).
-- The network then trains for up to 40 epochs (passes over the training
-  data), automatically stopping early once accuracy stops improving. This
-  takes roughly 10-20 minutes on a normal laptop CPU -- longer than a
-  bare-minimum setup, in exchange for squeezing out noticeably higher
-  accuracy.
+- The network then **trains indefinitely** — there's no fixed number of
+  epochs. Click the red **Stop Training** button whenever you want it to
+  stop (it finishes the current epoch first, then saves). Each epoch only
+  covers part of the training data (not the full 60,000 images), so it
+  finishes fast and the dashboard updates often; the network still works
+  through the rest of the data on the epochs that follow. On a normal
+  laptop CPU, expect roughly 10-20 seconds per epoch (faster with a GPU —
+  see the optional Apple Silicon step above). Longer training generally
+  means higher accuracy, with diminishing returns after a while.
 - While it trains, the dashboard updates **after every epoch** showing:
   - Current epoch number
   - Training loss / test loss (how wrong the model is — lower is better)
@@ -132,9 +136,13 @@ Click **Train Model**.
     to the correct answer — printed in **red** if wrong, **green** if
     correct. Watch these flip from red to green as training progresses;
     that's the network visibly learning.
-- When it finishes, the status bar shows the final test accuracy (usually
-  around 99.2-99.5% with this setup), and the trained model is
-  automatically saved to `saved_model/digit_model.keras`.
+- When you click **Stop Training** (or close in on a very high safety
+  ceiling of epochs, which you're very unlikely to ever reach), the status
+  bar shows the final test accuracy, and the trained model is
+  automatically saved to `saved_model/digit_model.keras`. A well-trained
+  run typically lands around 99.2-99.5% -- note that **99.9% is not a
+  realistic target** for a network this size; even research models tuned
+  specifically for MNIST rarely clear ~99.7-99.8%.
 
 ### Later runs: skip retraining
 
@@ -242,7 +250,8 @@ In plain terms, without heavy math:
 | "No digit could be detected in this image" | Use a photo with a single, clearly dark (or bright) digit against a plain, evenly lit background, filling a good portion of the frame. |
 | MNIST download fails (first Train click) | Check your internet connection — the first training run needs to download the dataset once (~11 MB). |
 | "Missing required libraries" message on startup | Run `pip install -r requirements.txt` inside your 3.11 virtual environment. |
-| Training seems to freeze the window | This is expected — the dashboard updates once per epoch (not continuously), and the window is busy for the ~10-20 minutes training takes. |
+| Training seems to freeze the window | This is expected — the dashboard updates once per epoch (not continuously). Training runs until you click **Stop Training**, so the window stays busy the whole time you let it run. |
+| Training feels slow / "less than 1 epoch a second" | Normal — each epoch still processes thousands of images in small batches, which takes real time even on fast hardware. If it feels too slow, make sure you're not accidentally on CPU when you meant to use a GPU (see the Apple Silicon step above), and double-check you're running the up-to-date file, not a stale copy. |
 
 ---
 
