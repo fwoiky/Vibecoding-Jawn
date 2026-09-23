@@ -48,6 +48,7 @@ if _MISSING:
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
+import matplotlib
 import numpy as np
 import tensorflow as tf
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
@@ -64,13 +65,59 @@ except ImportError:
 # Where the trained model is saved/loaded from.
 MODEL_PATH = "saved_model/digit_model.keras"
 
-# How many passes over the full training set to run. Small enough to
-# finish in a few minutes on a normal laptop CPU.
-EPOCHS = 8
+# Maximum passes over the full training set. In practice, training usually
+# stops earlier than this once accuracy stops improving (see EarlyStopping
+# in _train_model) -- this is just a ceiling. With the bigger network below,
+# expect training to take roughly 10-20 minutes on a normal laptop CPU,
+# not a couple of minutes.
+EPOCHS = 40
 BATCH_SIZE = 128
 
 # How many test images to show live in the training dashboard.
 NUM_SAMPLE_PREDICTIONS = 8
+
+# Validated, colorblind-safe chart/UI colors (see the project's color
+# system notes). Used consistently across the window and both graphs so
+# "Train" and "Test" always mean the same color everywhere on screen.
+COLOR_SURFACE = "#fcfcfb"       # chart / panel background
+COLOR_PAGE = "#f9f9f7"          # window background
+COLOR_INK_PRIMARY = "#0b0b0b"   # main text
+COLOR_INK_SECONDARY = "#52514e"  # secondary text
+COLOR_INK_MUTED = "#898781"     # axis labels, muted text
+COLOR_GRIDLINE = "#e1e0d9"      # chart gridlines
+COLOR_AXIS = "#c3c2b7"          # chart axis lines / borders
+COLOR_TRAIN = "#2a78d6"         # blue -- always means "training data"
+COLOR_TEST = "#eb6834"          # orange -- always means "test data"
+COLOR_ACCENT = "#2a78d6"        # primary button / highlight color
+COLOR_GOOD = "#0ca30c"          # correct prediction
+COLOR_CRITICAL = "#d03b3b"      # incorrect prediction
+
+
+def apply_chart_style():
+    """
+    Applies one consistent look to every matplotlib chart in the app, so
+    graphs match the window's colors instead of matplotlib's blue-gray
+    defaults with a mismatched white background.
+    """
+    plt_rc = {
+        "figure.facecolor": COLOR_SURFACE,
+        "axes.facecolor": COLOR_SURFACE,
+        "axes.edgecolor": COLOR_AXIS,
+        "axes.labelcolor": COLOR_INK_SECONDARY,
+        "axes.titlecolor": COLOR_INK_PRIMARY,
+        "axes.grid": True,
+        "grid.color": COLOR_GRIDLINE,
+        "grid.linewidth": 0.8,
+        "xtick.color": COLOR_INK_MUTED,
+        "ytick.color": COLOR_INK_MUTED,
+        "text.color": COLOR_INK_PRIMARY,
+        "font.size": 10,
+        "font.family": "sans-serif",
+        "axes.spines.top": False,
+        "axes.spines.right": False,
+        "legend.frameon": False,
+    }
+    matplotlib.rcParams.update(plt_rc)
 
 
 # ----------------------------------------------------------------------
@@ -112,30 +159,53 @@ def load_mnist_data():
 # ----------------------------------------------------------------------
 def build_model():
     """
-    Builds a small Convolutional Neural Network (CNN).
+    Builds a small Convolutional Neural Network (CNN) -- bigger than the
+    bare minimum needed for MNIST, so it has enough capacity to squeeze
+    out the last fraction of a percent of accuracy over a longer training
+    run, and to generalize better to real handwriting photos.
 
-    In plain terms:
-      Conv2D(8)   -> learns 8 simple stroke/edge patterns
+    In plain terms, top to bottom:
+      RandomRotation / RandomTranslation
+                  -> "data augmentation": during training only, each image
+                     is randomly nudged/rotated a little. This teaches the
+                     network that a digit is still the same digit even if
+                     it's slightly rotated or off-center -- exactly the
+                     kind of variation a real phone photo has.
+      Conv2D(32) x2 + BatchNorm
+                  -> learns 32 simple stroke/edge patterns, refines them,
+                     and BatchNorm keeps the numbers flowing through the
+                     network well-scaled so training is faster and more
+                     stable
       MaxPool     -> shrinks the image, keeping the strongest signals
-      Conv2D(16)  -> combines simple patterns into more complex shapes
-      MaxPool     -> shrinks again
-      Flatten     -> turns the 2D feature maps into a single list of numbers
-      Dense(64)   -> combines all the evidence together
       Dropout     -> randomly ignores some neurons while training, which
                      helps the network generalize instead of memorizing
+      Conv2D(64) + BatchNorm
+                  -> combines simple patterns into more complex shapes
+      MaxPool + Dropout again
+      Flatten     -> turns the 2D feature maps into a single list of numbers
+      Dense(128) + BatchNorm + Dropout
+                  -> combines all the evidence together
       Dense(10)   -> one output per digit 0-9, turned into probabilities
                      that add up to 100% (softmax)
     """
     model = tf.keras.Sequential(
         [
             tf.keras.Input(shape=(28, 28, 1)),
-            tf.keras.layers.Conv2D(8, kernel_size=3, activation="relu", padding="same"),
+            tf.keras.layers.RandomRotation(0.05),
+            tf.keras.layers.RandomTranslation(0.08, 0.08),
+            tf.keras.layers.Conv2D(32, kernel_size=3, padding="same", activation="relu"),
+            tf.keras.layers.BatchNormalization(),
+            tf.keras.layers.Conv2D(32, kernel_size=3, padding="same", activation="relu"),
             tf.keras.layers.MaxPooling2D(pool_size=2),
-            tf.keras.layers.Conv2D(16, kernel_size=3, activation="relu", padding="same"),
+            tf.keras.layers.Dropout(0.25),
+            tf.keras.layers.Conv2D(64, kernel_size=3, padding="same", activation="relu"),
+            tf.keras.layers.BatchNormalization(),
             tf.keras.layers.MaxPooling2D(pool_size=2),
+            tf.keras.layers.Dropout(0.25),
             tf.keras.layers.Flatten(),
-            tf.keras.layers.Dense(64, activation="relu"),
-            tf.keras.layers.Dropout(0.3),
+            tf.keras.layers.Dense(128, activation="relu"),
+            tf.keras.layers.BatchNormalization(),
+            tf.keras.layers.Dropout(0.4),
             tf.keras.layers.Dense(10, activation="softmax"),
         ]
     )
@@ -338,7 +408,9 @@ class DigitRecognizerApp:
     def __init__(self, root):
         self.root = root
         self.root.title("Teaching a Neural Network to Read Handwriting")
-        self.root.geometry("1050x720")
+        self.root.geometry("1200x780")
+        self.root.minsize(1000, 680)
+        self.root.configure(bg=COLOR_PAGE)
 
         self.model = None
         self.x_train = self.y_train = self.x_test = self.y_test = None
@@ -347,42 +419,176 @@ class DigitRecognizerApp:
         self.displayed_photo = None
         self.displayed_processed_photo = None
 
+        self._configure_style()
         self._build_layout()
+
+    # ---------------- Style ----------------
+    def _configure_style(self):
+        """Configures one consistent color/spacing theme for every widget."""
+        style = ttk.Style(self.root)
+        # "clam" is the only built-in ttk theme that reliably honors custom
+        # colors on every platform (the native themes mostly ignore them).
+        style.theme_use("clam")
+
+        style.configure("TFrame", background=COLOR_PAGE)
+        style.configure("Surface.TFrame", background=COLOR_SURFACE)
+        style.configure("TLabel", background=COLOR_PAGE, foreground=COLOR_INK_PRIMARY, font=("TkDefaultFont", 11))
+        style.configure(
+            "Header.TLabel",
+            background=COLOR_PAGE,
+            foreground=COLOR_INK_PRIMARY,
+            font=("TkDefaultFont", 18, "bold"),
+        )
+        style.configure(
+            "Subheader.TLabel",
+            background=COLOR_PAGE,
+            foreground=COLOR_INK_SECONDARY,
+            font=("TkDefaultFont", 11),
+        )
+        style.configure(
+            "Status.TLabel",
+            background=COLOR_SURFACE,
+            foreground=COLOR_INK_SECONDARY,
+            font=("TkDefaultFont", 10),
+            padding=10,
+        )
+        style.configure(
+            "Surface.TLabel",
+            background=COLOR_SURFACE,
+            foreground=COLOR_INK_PRIMARY,
+        )
+        style.configure(
+            "StatTileLabel.TLabel",
+            background=COLOR_SURFACE,
+            foreground=COLOR_INK_MUTED,
+            font=("TkDefaultFont", 9, "bold"),
+        )
+        style.configure(
+            "StatTileValue.TLabel",
+            background=COLOR_SURFACE,
+            foreground=COLOR_INK_PRIMARY,
+            font=("TkDefaultFont", 15, "bold"),
+        )
+        style.configure(
+            "StatTile.TFrame",
+            background=COLOR_SURFACE,
+            relief="solid",
+            borderwidth=1,
+        )
+        style.map("StatTile.TFrame", bordercolor=[("!disabled", COLOR_GRIDLINE)])
+
+        # Primary (accent-colored) buttons for the main actions.
+        style.configure(
+            "Accent.TButton",
+            background=COLOR_ACCENT,
+            foreground="#ffffff",
+            font=("TkDefaultFont", 10, "bold"),
+            padding=(14, 8),
+            borderwidth=0,
+        )
+        style.map(
+            "Accent.TButton",
+            background=[("active", "#1c5cab"), ("disabled", COLOR_GRIDLINE)],
+            foreground=[("disabled", COLOR_INK_MUTED)],
+        )
+
+        # Secondary (outline-style) buttons for less prominent actions.
+        style.configure(
+            "Secondary.TButton",
+            background=COLOR_SURFACE,
+            foreground=COLOR_INK_PRIMARY,
+            font=("TkDefaultFont", 10),
+            padding=(14, 8),
+            borderwidth=1,
+        )
+        style.map(
+            "Secondary.TButton",
+            background=[("active", COLOR_GRIDLINE), ("disabled", COLOR_SURFACE)],
+            foreground=[("disabled", COLOR_INK_MUTED)],
+        )
+
+        style.configure("TLabelframe", background=COLOR_SURFACE, borderwidth=1, relief="solid")
+        style.configure(
+            "TLabelframe.Label",
+            background=COLOR_SURFACE,
+            foreground=COLOR_INK_SECONDARY,
+            font=("TkDefaultFont", 10, "bold"),
+        )
+
+    def _make_stat_tile(self, parent, label_text, initial_value):
+        """
+        Builds one small bordered "tile" showing a label (e.g. "Epoch") on
+        top and a bold value below -- used for the live training stats, so
+        they read as distinct data points instead of a run-on line of text.
+        """
+        tile = ttk.Frame(parent, style="StatTile.TFrame", padding=(14, 8))
+        ttk.Label(tile, text=label_text, style="StatTileLabel.TLabel").pack(anchor="w")
+        value_var = tk.StringVar(value=initial_value)
+        ttk.Label(tile, textvariable=value_var, style="StatTileValue.TLabel").pack(anchor="w")
+        return tile, value_var
 
     # ---------------- Layout ----------------
     def _build_layout(self):
-        button_bar = ttk.Frame(self.root, padding=8)
+        header = ttk.Frame(self.root, padding=(16, 16, 16, 8))
+        header.pack(side=tk.TOP, fill=tk.X)
+        ttk.Label(header, text="Teaching a Neural Network to Read Handwriting", style="Header.TLabel").pack(
+            anchor="w"
+        )
+        ttk.Label(
+            header,
+            text="Train a small neural network on MNIST, watch it learn live, then test it on your own handwriting.",
+            style="Subheader.TLabel",
+        ).pack(anchor="w", pady=(2, 0))
+
+        button_bar = ttk.Frame(self.root, padding=(16, 4, 16, 12))
         button_bar.pack(side=tk.TOP, fill=tk.X)
 
         self.main_buttons = []
 
-        train_button = ttk.Button(button_bar, text="Train Model", command=self.on_train_clicked)
-        train_button.pack(side=tk.LEFT, padx=4)
+        train_button = ttk.Button(
+            button_bar, text="Train Model", command=self.on_train_clicked, style="Accent.TButton"
+        )
+        train_button.pack(side=tk.LEFT, padx=(0, 8))
         self.main_buttons.append(train_button)
 
-        load_button = ttk.Button(button_bar, text="Load Saved Model", command=self.on_load_clicked)
-        load_button.pack(side=tk.LEFT, padx=4)
+        load_button = ttk.Button(
+            button_bar, text="Load Saved Model", command=self.on_load_clicked, style="Secondary.TButton"
+        )
+        load_button.pack(side=tk.LEFT, padx=8)
         self.main_buttons.append(load_button)
 
-        retrain_button = ttk.Button(button_bar, text="Retrain Model", command=self.on_retrain_clicked)
-        retrain_button.pack(side=tk.LEFT, padx=4)
+        retrain_button = ttk.Button(
+            button_bar, text="Retrain Model", command=self.on_retrain_clicked, style="Secondary.TButton"
+        )
+        retrain_button.pack(side=tk.LEFT, padx=8)
         self.main_buttons.append(retrain_button)
 
         self.test_button = ttk.Button(
-            button_bar, text="Test My Handwriting", command=self.show_test_screen, state=tk.DISABLED
+            button_bar,
+            text="Test My Handwriting",
+            command=self.show_test_screen,
+            state=tk.DISABLED,
+            style="Accent.TButton",
         )
-        self.test_button.pack(side=tk.LEFT, padx=4)
+        self.test_button.pack(side=tk.LEFT, padx=8)
 
         back_button = ttk.Button(
-            button_bar, text="Back to Training Dashboard", command=self.show_dashboard_screen
+            button_bar,
+            text="Back to Training Dashboard",
+            command=self.show_dashboard_screen,
+            style="Secondary.TButton",
         )
-        back_button.pack(side=tk.LEFT, padx=4)
+        back_button.pack(side=tk.LEFT, padx=8)
         self.main_buttons.append(back_button)
 
         self.status_var = tk.StringVar(value="Click 'Train Model' or 'Load Saved Model' to begin.")
-        ttk.Label(self.root, textvariable=self.status_var, padding=6).pack(side=tk.TOP, fill=tk.X)
+        status_bar = ttk.Frame(self.root, style="Surface.TFrame")
+        status_bar.pack(side=tk.TOP, fill=tk.X, padx=16)
+        ttk.Label(status_bar, textvariable=self.status_var, style="Status.TLabel").pack(
+            side=tk.LEFT, fill=tk.X, expand=True
+        )
 
-        self.screen_container = ttk.Frame(self.root)
+        self.screen_container = ttk.Frame(self.root, padding=16)
         self.screen_container.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
 
         self.dashboard_frame = ttk.Frame(self.screen_container)
@@ -397,23 +603,20 @@ class DigitRecognizerApp:
         self.show_dashboard_screen()
 
     def _build_dashboard_screen(self):
-        stats = ttk.Frame(self.dashboard_frame, padding=8)
-        stats.pack(side=tk.TOP, fill=tk.X)
+        stats = ttk.Frame(self.dashboard_frame)
+        stats.pack(side=tk.TOP, fill=tk.X, pady=(0, 12))
 
-        self.epoch_var = tk.StringVar(value="Epoch: -")
-        self.train_loss_var = tk.StringVar(value="Train Loss: -")
-        self.test_loss_var = tk.StringVar(value="Test Loss: -")
-        self.train_acc_var = tk.StringVar(value="Train Accuracy: -")
-        self.test_acc_var = tk.StringVar(value="Test Accuracy: -")
+        epoch_tile, self.epoch_var = self._make_stat_tile(stats, "EPOCH", "-")
+        train_loss_tile, self.train_loss_var = self._make_stat_tile(stats, "TRAIN LOSS", "-")
+        test_loss_tile, self.test_loss_var = self._make_stat_tile(stats, "TEST LOSS", "-")
+        train_acc_tile, self.train_acc_var = self._make_stat_tile(stats, "TRAIN ACCURACY", "-")
+        test_acc_tile, self.test_acc_var = self._make_stat_tile(stats, "TEST ACCURACY", "-")
 
-        for var in (
-            self.epoch_var,
-            self.train_loss_var,
-            self.test_loss_var,
-            self.train_acc_var,
-            self.test_acc_var,
-        ):
-            ttk.Label(stats, textvariable=var, font=("TkDefaultFont", 11, "bold")).pack(side=tk.LEFT, padx=12)
+        for tile in (epoch_tile, train_loss_tile, test_loss_tile, train_acc_tile, test_acc_tile):
+            tile.pack(side=tk.LEFT, padx=(0, 10), fill=tk.Y)
+
+        chart_panel = ttk.Frame(self.dashboard_frame, style="Surface.TFrame", padding=8)
+        chart_panel.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
 
         self.dashboard_figure = Figure(figsize=(10, 5.5), dpi=100, constrained_layout=True)
         grid = self.dashboard_figure.add_gridspec(2, 8)
@@ -424,43 +627,55 @@ class DigitRecognizerApp:
         ]
         self._reset_dashboard_plots()
 
-        self.dashboard_canvas = FigureCanvasTkAgg(self.dashboard_figure, master=self.dashboard_frame)
+        self.dashboard_canvas = FigureCanvasTkAgg(self.dashboard_figure, master=chart_panel)
         self.dashboard_canvas.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=True)
 
     def _build_test_screen(self):
-        top = ttk.Frame(self.test_frame, padding=8)
-        top.pack(side=tk.TOP, fill=tk.X)
-        ttk.Button(top, text="Choose Image...", command=self.on_choose_image_clicked).pack(side=tk.LEFT)
+        top = ttk.Frame(self.test_frame)
+        top.pack(side=tk.TOP, fill=tk.X, pady=(0, 12))
+        ttk.Button(
+            top, text="Choose Image...", command=self.on_choose_image_clicked, style="Accent.TButton"
+        ).pack(side=tk.LEFT)
         self.prediction_var = tk.StringVar(value="Prediction: -    Confidence: -")
-        ttk.Label(top, textvariable=self.prediction_var, font=("TkDefaultFont", 14, "bold")).pack(
-            side=tk.LEFT, padx=20
-        )
+        ttk.Label(top, textvariable=self.prediction_var, style="Header.TLabel").pack(side=tk.LEFT, padx=20)
 
-        images_row = ttk.Frame(self.test_frame, padding=8)
-        images_row.pack(side=tk.TOP, fill=tk.X)
+        images_row = ttk.Frame(self.test_frame)
+        images_row.pack(side=tk.TOP, fill=tk.X, pady=(0, 12))
 
-        original_box = ttk.LabelFrame(images_row, text="Original Photo")
-        original_box.pack(side=tk.LEFT, padx=10)
-        self.original_image_label = ttk.Label(original_box)
+        original_box = ttk.LabelFrame(images_row, text="Original Photo", padding=8)
+        original_box.pack(side=tk.LEFT, padx=(0, 12))
+        self.original_image_label = ttk.Label(original_box, style="Surface.TLabel")
         self.original_image_label.pack(padx=6, pady=6)
 
-        processed_box = ttk.LabelFrame(images_row, text="What the Network Sees (28x28)")
-        processed_box.pack(side=tk.LEFT, padx=10)
-        self.processed_image_label = ttk.Label(processed_box)
+        processed_box = ttk.LabelFrame(images_row, text="What the Network Sees (28x28)", padding=8)
+        processed_box.pack(side=tk.LEFT, padx=12)
+        self.processed_image_label = ttk.Label(processed_box, style="Surface.TLabel")
         self.processed_image_label.pack(padx=6, pady=6)
 
-        readout_box = ttk.LabelFrame(images_row, text="Confidence for each digit")
-        readout_box.pack(side=tk.LEFT, padx=10, fill=tk.BOTH, expand=True)
-        self.confidence_text = tk.Text(readout_box, width=16, height=12, font=("Courier", 11))
+        readout_box = ttk.LabelFrame(images_row, text="Confidence for each digit", padding=8)
+        readout_box.pack(side=tk.LEFT, padx=12, fill=tk.BOTH, expand=True)
+        self.confidence_text = tk.Text(
+            readout_box,
+            width=16,
+            height=12,
+            font=("Courier", 11),
+            background=COLOR_SURFACE,
+            foreground=COLOR_INK_PRIMARY,
+            relief="flat",
+            highlightthickness=0,
+        )
         self.confidence_text.pack(padx=6, pady=6)
         self.confidence_text.configure(state=tk.DISABLED)
+
+        chart_panel = ttk.Frame(self.test_frame, style="Surface.TFrame", padding=8)
+        chart_panel.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
 
         self.probability_figure = Figure(figsize=(9, 3), dpi=100, constrained_layout=True)
         self.probability_ax = self.probability_figure.add_subplot(111)
         self.probability_ax.set_title("Prediction confidence by digit")
         self.probability_ax.set_xticks(range(10))
         self.probability_ax.set_ylim(0, 100)
-        self.probability_canvas = FigureCanvasTkAgg(self.probability_figure, master=self.test_frame)
+        self.probability_canvas = FigureCanvasTkAgg(self.probability_figure, master=chart_panel)
         self.probability_canvas.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=True)
 
     # ---------------- Screen switching ----------------
@@ -484,16 +699,16 @@ class DigitRecognizerApp:
         self.loss_ax.clear()
         self.loss_ax.set_title("Loss (lower is better)")
         self.loss_ax.set_xlabel("Epoch")
-        self.loss_ax.plot([], [], label="Train")
-        self.loss_ax.plot([], [], label="Test")
+        self.loss_ax.plot([], [], label="Train", color=COLOR_TRAIN)
+        self.loss_ax.plot([], [], label="Test", color=COLOR_TEST)
         self.loss_ax.legend(loc="upper right")
 
         self.acc_ax.clear()
         self.acc_ax.set_title("Accuracy (higher is better)")
         self.acc_ax.set_xlabel("Epoch")
         self.acc_ax.set_ylim(0, 1)
-        self.acc_ax.plot([], [], label="Train")
-        self.acc_ax.plot([], [], label="Test")
+        self.acc_ax.plot([], [], label="Train", color=COLOR_TRAIN)
+        self.acc_ax.plot([], [], label="Test", color=COLOR_TEST)
         self.acc_ax.legend(loc="lower right")
 
         for ax in self.sample_axes:
@@ -561,13 +776,25 @@ class DigitRecognizerApp:
 
             callback = DashboardCallback(self, sample_images, sample_labels)
 
+            # Stop automatically once test accuracy stops improving for 6
+            # epochs in a row, and roll back to the best-performing epoch's
+            # weights (instead of whatever epoch happened to run last).
+            early_stop = tf.keras.callbacks.EarlyStopping(
+                monitor="val_accuracy", patience=6, restore_best_weights=True
+            )
+            # If progress stalls, shrink the learning rate so training can
+            # keep inching accuracy up instead of plateauing.
+            reduce_lr = tf.keras.callbacks.ReduceLROnPlateau(
+                monitor="val_loss", factor=0.5, patience=3, min_lr=1e-5
+            )
+
             self.model.fit(
                 self.x_train,
                 self.y_train,
                 validation_data=(self.x_test, self.y_test),
                 epochs=EPOCHS,
                 batch_size=BATCH_SIZE,
-                callbacks=[callback],
+                callbacks=[callback, early_stop, reduce_lr],
                 verbose=0,
             )
 
@@ -576,7 +803,7 @@ class DigitRecognizerApp:
             self.model.save(MODEL_PATH)
 
             self.set_status(
-                f"Training complete! Final test accuracy: {final_acc * 100:.1f}% (model saved to {MODEL_PATH})"
+                f"Training complete! Final test accuracy: {final_acc * 100:.2f}% (model saved to {MODEL_PATH})"
             )
             self.test_button.configure(state=tk.NORMAL)
         except Exception as exc:  # noqa: BLE001
@@ -594,24 +821,24 @@ class DigitRecognizerApp:
         self.epoch_var.set(f"Epoch: {epoch + 1}/{EPOCHS}")
         self.train_loss_var.set(f"Train Loss: {logs.get('loss'):.3f}")
         self.test_loss_var.set(f"Test Loss: {logs.get('val_loss'):.3f}")
-        self.train_acc_var.set(f"Train Accuracy: {logs.get('accuracy') * 100:.1f}%")
-        self.test_acc_var.set(f"Test Accuracy: {logs.get('val_accuracy') * 100:.1f}%")
+        self.train_acc_var.set(f"Train Accuracy: {logs.get('accuracy') * 100:.2f}%")
+        self.test_acc_var.set(f"Test Accuracy: {logs.get('val_accuracy') * 100:.2f}%")
 
         epochs_so_far = range(1, len(self.train_losses) + 1)
 
         self.loss_ax.clear()
         self.loss_ax.set_title("Loss (lower is better)")
         self.loss_ax.set_xlabel("Epoch")
-        self.loss_ax.plot(epochs_so_far, self.train_losses, label="Train", marker="o")
-        self.loss_ax.plot(epochs_so_far, self.test_losses, label="Test", marker="o")
+        self.loss_ax.plot(epochs_so_far, self.train_losses, label="Train", color=COLOR_TRAIN, linewidth=2, marker="o", markersize=4)
+        self.loss_ax.plot(epochs_so_far, self.test_losses, label="Test", color=COLOR_TEST, linewidth=2, marker="o", markersize=4)
         self.loss_ax.legend(loc="upper right")
 
         self.acc_ax.clear()
         self.acc_ax.set_title("Accuracy (higher is better)")
         self.acc_ax.set_xlabel("Epoch")
         self.acc_ax.set_ylim(0, 1)
-        self.acc_ax.plot(epochs_so_far, self.train_accs, label="Train", marker="o")
-        self.acc_ax.plot(epochs_so_far, self.test_accs, label="Test", marker="o")
+        self.acc_ax.plot(epochs_so_far, self.train_accs, label="Train", color=COLOR_TRAIN, linewidth=2, marker="o", markersize=4)
+        self.acc_ax.plot(epochs_so_far, self.test_accs, label="Test", color=COLOR_TEST, linewidth=2, marker="o", markersize=4)
         self.acc_ax.legend(loc="lower right")
 
         predicted_labels = np.argmax(sample_predictions, axis=1)
@@ -621,8 +848,8 @@ class DigitRecognizerApp:
             ax.imshow(sample_images[i].squeeze(), cmap="gray")
             true_label = int(sample_labels[i])
             predicted_label = int(predicted_labels[i])
-            color = "green" if predicted_label == true_label else "red"
-            ax.set_title(f"true {true_label} / guess {predicted_label}", color=color, fontsize=8)
+            color = COLOR_GOOD if predicted_label == true_label else COLOR_CRITICAL
+            ax.set_title(f"true {true_label} / guess {predicted_label}", color=color, fontsize=8, fontweight="bold")
 
         self.dashboard_canvas.draw()
         self.root.update_idletasks()
@@ -671,9 +898,12 @@ class DigitRecognizerApp:
     def _update_confidence_text(self, probabilities, predicted_digit):
         self.confidence_text.configure(state=tk.NORMAL)
         self.confidence_text.delete("1.0", tk.END)
+        self.confidence_text.tag_configure("predicted", foreground=COLOR_ACCENT, font=("Courier", 11, "bold"))
         for digit in range(10):
             marker = " <--" if digit == predicted_digit else ""
-            self.confidence_text.insert(tk.END, f"{digit}  {probabilities[digit] * 100:5.1f}%{marker}\n")
+            line = f"{digit}  {probabilities[digit] * 100:5.1f}%{marker}\n"
+            tag = "predicted" if digit == predicted_digit else ()
+            self.confidence_text.insert(tk.END, line, tag)
         self.confidence_text.configure(state=tk.DISABLED)
 
     def _update_probability_chart(self, probabilities, predicted_digit):
@@ -681,12 +911,13 @@ class DigitRecognizerApp:
         self.probability_ax.set_title("Prediction confidence by digit")
         self.probability_ax.set_ylim(0, 100)
         self.probability_ax.set_xticks(range(10))
-        colors = ["green" if d == predicted_digit else "steelblue" for d in range(10)]
+        colors = [COLOR_ACCENT if d == predicted_digit else COLOR_AXIS for d in range(10)]
         self.probability_ax.bar(range(10), probabilities * 100, color=colors)
         self.probability_canvas.draw()
 
 
 def main():
+    apply_chart_style()
     root = tk.Tk()
     DigitRecognizerApp(root)
     root.mainloop()

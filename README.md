@@ -103,8 +103,11 @@ Click **Train Model**.
 
 - The first click downloads the MNIST dataset (~11 MB, needs internet,
   cached afterward so this only happens once).
-- The network then trains for 8 epochs (passes over the training data).
-  This takes roughly 1-3 minutes on a normal laptop CPU.
+- The network then trains for up to 40 epochs (passes over the training
+  data), automatically stopping early once accuracy stops improving. This
+  takes roughly 10-20 minutes on a normal laptop CPU -- longer than a
+  bare-minimum setup, in exchange for squeezing out noticeably higher
+  accuracy.
 - While it trains, the dashboard updates **after every epoch** showing:
   - Current epoch number
   - Training loss / test loss (how wrong the model is — lower is better)
@@ -115,8 +118,8 @@ Click **Train Model**.
     correct. Watch these flip from red to green as training progresses;
     that's the network visibly learning.
 - When it finishes, the status bar shows the final test accuracy (usually
-  around 98-99%), and the trained model is automatically saved to
-  `saved_model/digit_model.keras`.
+  around 99.2-99.5% with this setup), and the trained model is
+  automatically saved to `saved_model/digit_model.keras`.
 
 ### Later runs: skip retraining
 
@@ -224,7 +227,7 @@ In plain terms, without heavy math:
 | "No digit could be detected in this image" | Use a photo with a single, clearly dark (or bright) digit against a plain, evenly lit background, filling a good portion of the frame. |
 | MNIST download fails (first Train click) | Check your internet connection — the first training run needs to download the dataset once (~11 MB). |
 | "Missing required libraries" message on startup | Run `pip install -r requirements.txt` inside your 3.11 virtual environment. |
-| Training seems to freeze the window | This is expected — the dashboard updates once per epoch (not continuously), and the window is busy for the ~1-3 minutes training takes. |
+| Training seems to freeze the window | This is expected — the dashboard updates once per epoch (not continuously), and the window is busy for the ~10-20 minutes training takes. |
 
 ---
 

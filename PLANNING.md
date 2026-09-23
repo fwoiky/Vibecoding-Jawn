@@ -16,10 +16,12 @@ from a photo of your own handwriting. ENGR-126 midterm demo.
 
 ## What the program does
 
-1. **Train Model** — loads MNIST, builds a small CNN, trains ~8 epochs
-   (~1-3 min on CPU). After every epoch, a dashboard updates live: loss
-   graph, accuracy graph, and 8 sample digits whose guesses flip from red
-   (wrong) to green (correct) as the network improves.
+1. **Train Model** — loads MNIST, builds a small CNN (with light data
+   augmentation and batch normalization for extra accuracy), trains up to
+   40 epochs with early stopping (~10-20 min on CPU). After every epoch, a
+   dashboard updates live: loss graph, accuracy graph, and 8 sample digits
+   whose guesses flip from red (wrong) to green (correct) as the network
+   improves.
 2. Saves the trained model to `saved_model/digit_model.keras` automatically.
 3. **Load Saved Model** — skips training on future runs.
 4. **Test My Handwriting** — pick a photo of a digit you wrote. The app:
@@ -46,9 +48,13 @@ from a photo of your own handwriting. ENGR-126 midterm demo.
   a plain background — very cluttered photos may fail with a clear
   "No digit could be detected" error rather than a wrong guess.
 - Training happens on the main thread, so the window is "busy" (not
-  frozen — the dashboard updates once per epoch) for the ~1-3 minutes
+  frozen — the dashboard updates once per epoch) for the ~10-20 minutes
   training takes.
-- Typical final test accuracy on MNIST: ~98-99%. Accuracy on your own
+- Typical final test accuracy on MNIST: ~99.2-99.5%. **99.9% is not a
+  realistic target** for a network this size — even research models
+  tuned specifically for MNIST rarely clear ~99.7-99.8%, and that's with
+  heavy ensembling. Say the actual final number live in the demo rather
+  than promising a specific target in advance. Accuracy on your own
   handwriting will usually be a bit lower — real photos are messier than
   MNIST, which is exactly what the preprocessing step is trying to close
   the gap on, and is worth explaining live in the demo.
