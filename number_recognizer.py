@@ -415,7 +415,7 @@ class DigitRecognizerApp:
         ):
             ttk.Label(stats, textvariable=var, font=("TkDefaultFont", 11, "bold")).pack(side=tk.LEFT, padx=12)
 
-        self.dashboard_figure = Figure(figsize=(10, 5.5), dpi=100)
+        self.dashboard_figure = Figure(figsize=(10, 5.5), dpi=100, constrained_layout=True)
         grid = self.dashboard_figure.add_gridspec(2, 8)
         self.loss_ax = self.dashboard_figure.add_subplot(grid[0, 0:4])
         self.acc_ax = self.dashboard_figure.add_subplot(grid[1, 0:4])
@@ -455,7 +455,7 @@ class DigitRecognizerApp:
         self.confidence_text.pack(padx=6, pady=6)
         self.confidence_text.configure(state=tk.DISABLED)
 
-        self.probability_figure = Figure(figsize=(9, 3), dpi=100)
+        self.probability_figure = Figure(figsize=(9, 3), dpi=100, constrained_layout=True)
         self.probability_ax = self.probability_figure.add_subplot(111)
         self.probability_ax.set_title("Prediction confidence by digit")
         self.probability_ax.set_xticks(range(10))
