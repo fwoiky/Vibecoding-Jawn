@@ -11,7 +11,9 @@ photo of your own handwriting.
 HOW TO RUN
   1. pip install -r requirements.txt   (see requirements.txt / README.md)
   2. python number_recognizer.py
-  3. Click "Train Model" (first time only -- takes 1-3 minutes on a CPU).
+  3. Click "Train Model" (first time only). Training runs until you click
+     "Stop Training" -- there's no fixed length, so let it run as long as
+     you'd like before stopping it.
   4. Click "Test My Handwriting" and choose a photo of a digit you wrote.
 
 Everything is in this one file so it's easy to copy/paste into PyCharm.
@@ -85,28 +87,87 @@ STEPS_PER_EPOCH = 150
 # How many test images to show live in the training dashboard.
 NUM_SAMPLE_PREDICTIONS = 8
 
-# Validated, colorblind-safe chart/UI colors (see the project's color
-# system notes). Used consistently across the window and both graphs so
-# "Train" and "Test" always mean the same color everywhere on screen.
-COLOR_SURFACE = "#fcfcfb"       # chart / panel background
-COLOR_PAGE = "#f9f9f7"          # window background
-COLOR_INK_PRIMARY = "#0b0b0b"   # main text
-COLOR_INK_SECONDARY = "#52514e"  # secondary text
-COLOR_INK_MUTED = "#898781"     # axis labels, muted text
-COLOR_GRIDLINE = "#e1e0d9"      # chart gridlines
-COLOR_AXIS = "#c3c2b7"          # chart axis lines / borders
-COLOR_TRAIN = "#2a78d6"         # blue -- always means "training data"
-COLOR_TEST = "#eb6834"          # orange -- always means "test data"
-COLOR_ACCENT = "#2a78d6"        # primary button / highlight color
-COLOR_GOOD = "#0ca30c"          # correct prediction
-COLOR_CRITICAL = "#d03b3b"      # incorrect prediction
+# Validated, colorblind-safe chart/UI colors, in a light and a dark
+# variant (toggled from the "Dark Mode" / "Light Mode" button in the app).
+# Used consistently across the window and both graphs so "Train" and
+# "Test" always mean the same color everywhere on screen.
+LIGHT_PALETTE = {
+    "surface": "#fcfcfb",        # chart / panel background
+    "page": "#f9f9f7",           # window background
+    "ink_primary": "#0b0b0b",    # main text
+    "ink_secondary": "#52514e",  # secondary text
+    "ink_muted": "#898781",      # axis labels, muted text
+    "gridline": "#e1e0d9",       # chart gridlines
+    "axis": "#c3c2b7",           # chart axis lines / borders
+    "train": "#2a78d6",          # blue -- always means "training data"
+    "test": "#eb6834",           # orange -- always means "test data"
+    "accent": "#2a78d6",         # primary button / highlight color
+    "good": "#0ca30c",           # correct prediction
+    "critical": "#d03b3b",       # incorrect prediction
+}
+DARK_PALETTE = {
+    "surface": "#1a1a19",
+    "page": "#0d0d0d",
+    "ink_primary": "#ffffff",
+    "ink_secondary": "#c3c2b7",
+    "ink_muted": "#898781",
+    "gridline": "#2c2c2a",
+    "axis": "#383835",
+    "train": "#3987e5",
+    "test": "#d95926",
+    "accent": "#3987e5",
+    "good": "#0ca30c",
+    "critical": "#e66767",
+}
+
+# These start out pointing at the light palette; apply_palette() below
+# reassigns them (and every function that reads them looks the value up
+# fresh each time it's called, so a reassignment here is picked up
+# everywhere immediately -- no need to pass colors around as arguments).
+COLOR_SURFACE = LIGHT_PALETTE["surface"]
+COLOR_PAGE = LIGHT_PALETTE["page"]
+COLOR_INK_PRIMARY = LIGHT_PALETTE["ink_primary"]
+COLOR_INK_SECONDARY = LIGHT_PALETTE["ink_secondary"]
+COLOR_INK_MUTED = LIGHT_PALETTE["ink_muted"]
+COLOR_GRIDLINE = LIGHT_PALETTE["gridline"]
+COLOR_AXIS = LIGHT_PALETTE["axis"]
+COLOR_TRAIN = LIGHT_PALETTE["train"]
+COLOR_TEST = LIGHT_PALETTE["test"]
+COLOR_ACCENT = LIGHT_PALETTE["accent"]
+COLOR_GOOD = LIGHT_PALETTE["good"]
+COLOR_CRITICAL = LIGHT_PALETTE["critical"]
+
+
+def apply_palette(mode):
+    """Switches every COLOR_* constant above to the light or dark palette."""
+    global COLOR_SURFACE, COLOR_PAGE, COLOR_INK_PRIMARY, COLOR_INK_SECONDARY
+    global COLOR_INK_MUTED, COLOR_GRIDLINE, COLOR_AXIS, COLOR_TRAIN
+    global COLOR_TEST, COLOR_ACCENT, COLOR_GOOD, COLOR_CRITICAL
+
+    palette = DARK_PALETTE if mode == "dark" else LIGHT_PALETTE
+    COLOR_SURFACE = palette["surface"]
+    COLOR_PAGE = palette["page"]
+    COLOR_INK_PRIMARY = palette["ink_primary"]
+    COLOR_INK_SECONDARY = palette["ink_secondary"]
+    COLOR_INK_MUTED = palette["ink_muted"]
+    COLOR_GRIDLINE = palette["gridline"]
+    COLOR_AXIS = palette["axis"]
+    COLOR_TRAIN = palette["train"]
+    COLOR_TEST = palette["test"]
+    COLOR_ACCENT = palette["accent"]
+    COLOR_GOOD = palette["good"]
+    COLOR_CRITICAL = palette["critical"]
+    apply_chart_style()
 
 
 def apply_chart_style():
     """
-    Applies one consistent look to every matplotlib chart in the app, so
-    graphs match the window's colors instead of matplotlib's blue-gray
-    defaults with a mismatched white background.
+    Applies one consistent look to every *new* matplotlib chart in the
+    app, so graphs match the window's colors instead of matplotlib's
+    blue-gray defaults with a mismatched white background. This only
+    affects charts created from here on -- an already-built chart needs
+    _style_axes() below to actually change color (matplotlib doesn't
+    retroactively restyle existing ones from rcParams alone).
     """
     plt_rc = {
         "figure.facecolor": COLOR_SURFACE,
@@ -120,6 +181,7 @@ def apply_chart_style():
         "xtick.color": COLOR_INK_MUTED,
         "ytick.color": COLOR_INK_MUTED,
         "text.color": COLOR_INK_PRIMARY,
+        "legend.labelcolor": COLOR_INK_PRIMARY,
         "font.size": 10,
         "font.family": "sans-serif",
         "axes.spines.top": False,
@@ -127,6 +189,24 @@ def apply_chart_style():
         "legend.frameon": False,
     }
     matplotlib.rcParams.update(plt_rc)
+
+
+def _style_axes(ax):
+    """
+    Explicitly recolors one already-existing chart axes to match the
+    current palette. Called after every ax.clear() + replot, including
+    when the theme is toggled, since matplotlib only applies rcParams to
+    axes at the moment they're first created.
+    """
+    ax.set_facecolor(COLOR_SURFACE)
+    ax.tick_params(colors=COLOR_INK_MUTED)
+    for side, spine in ax.spines.items():
+        spine.set_visible(side not in ("top", "right"))
+        spine.set_color(COLOR_AXIS)
+    ax.title.set_color(COLOR_INK_PRIMARY)
+    ax.xaxis.label.set_color(COLOR_INK_SECONDARY)
+    ax.yaxis.label.set_color(COLOR_INK_SECONDARY)
+    ax.grid(True, color=COLOR_GRIDLINE, linewidth=0.8)
 
 
 # ----------------------------------------------------------------------
@@ -299,7 +379,7 @@ def preprocess_for_model(pil_image: Image.Image):
     model_input = canvas.astype("float32") / 255.0
     model_input = model_input.reshape(1, 28, 28, 1)
 
-    display_image = Image.fromarray(canvas).resize((140, 140), Image.NEAREST)
+    display_image = Image.fromarray(canvas).resize((140, 140), Image.Resampling.NEAREST)
     return model_input, display_image
 
 
@@ -377,7 +457,7 @@ def _resize_and_center(cropped: np.ndarray) -> np.ndarray:
     else:
         new_width = 20
         new_height = max(1, round(height * (20 / width)))
-    digit_image = digit_image.resize((new_width, new_height), Image.LANCZOS)
+    digit_image = digit_image.resize((new_width, new_height), Image.Resampling.LANCZOS)
 
     canvas = Image.new("L", (28, 28), color=0)
     paste_x = (28 - new_width) // 2
@@ -433,6 +513,15 @@ class DigitRecognizerApp:
         self.displayed_photo = None
         self.displayed_processed_photo = None
         self.stop_requested = False
+        self.theme_mode = "light"
+
+        # Cached so charts can be redrawn with the same content (just in
+        # new colors) when the theme is toggled, instead of going blank.
+        self.last_sample_images = None
+        self.last_sample_labels = None
+        self.last_sample_predictions = None
+        self.last_probabilities = None
+        self.last_predicted_digit = None
 
         self._configure_style()
         self._build_layout()
@@ -557,13 +646,58 @@ class DigitRecognizerApp:
         ttk.Label(tile, textvariable=value_var, style="StatTileValue.TLabel").pack(anchor="w")
         return tile, value_var
 
+    # ---------------- Theme ----------------
+    def _theme_button_label(self):
+        # The label names the mode you'd SWITCH TO, not the current one.
+        return "Light Mode" if self.theme_mode == "dark" else "Dark Mode"
+
+    def on_toggle_theme_clicked(self):
+        self.set_theme("dark" if self.theme_mode == "light" else "light")
+
+    def set_theme(self, mode):
+        if mode == self.theme_mode:
+            return
+        self.theme_mode = mode
+        apply_palette(mode)  # updates the COLOR_* constants + matplotlib rcParams
+
+        # ttk widgets (buttons, frames, labels, tiles) redraw themselves
+        # automatically once their named style is reconfigured.
+        self._configure_style()
+        self.root.configure(bg=COLOR_PAGE)
+        self.theme_button.configure(text=self._theme_button_label())
+
+        # tk.Text isn't a ttk widget, so its colors need to be set directly.
+        self.confidence_text.configure(background=COLOR_SURFACE, foreground=COLOR_INK_PRIMARY)
+
+        # matplotlib charts already on screen need to be explicitly
+        # restyled and redrawn -- rcParams only affects charts created
+        # from this point on, not these existing ones.
+        self.dashboard_figure.set_facecolor(COLOR_SURFACE)
+        self.probability_figure.set_facecolor(COLOR_SURFACE)
+        if self.train_losses:
+            self._redraw_dashboard_charts()
+        else:
+            self._reset_dashboard_plots()
+        self.dashboard_canvas.draw()
+
+        self._update_confidence_text()
+        self._update_probability_chart()
+
     # ---------------- Layout ----------------
     def _build_layout(self):
         header = ttk.Frame(self.root, padding=(16, 16, 16, 8))
         header.pack(side=tk.TOP, fill=tk.X)
-        ttk.Label(header, text="Teaching a Neural Network to Read Handwriting", style="Header.TLabel").pack(
-            anchor="w"
+
+        title_row = ttk.Frame(header)
+        title_row.pack(side=tk.TOP, fill=tk.X)
+        ttk.Label(title_row, text="Teaching a Neural Network to Read Handwriting", style="Header.TLabel").pack(
+            side=tk.LEFT, anchor="w"
         )
+        self.theme_button = ttk.Button(
+            title_row, text=self._theme_button_label(), command=self.on_toggle_theme_clicked, style="Secondary.TButton"
+        )
+        self.theme_button.pack(side=tk.RIGHT)
+
         ttk.Label(
             header,
             text="Train a small neural network on MNIST, watch it learn live, then test it on your own handwriting.",
@@ -741,6 +875,7 @@ class DigitRecognizerApp:
         self.loss_ax.plot([], [], label="Train", color=COLOR_TRAIN)
         self.loss_ax.plot([], [], label="Test", color=COLOR_TEST)
         self.loss_ax.legend(loc="upper right")
+        _style_axes(self.loss_ax)
 
         self.acc_ax.clear()
         self.acc_ax.set_title("Accuracy (higher is better)")
@@ -749,13 +884,70 @@ class DigitRecognizerApp:
         self.acc_ax.plot([], [], label="Train", color=COLOR_TRAIN)
         self.acc_ax.plot([], [], label="Test", color=COLOR_TEST)
         self.acc_ax.legend(loc="lower right")
+        _style_axes(self.acc_ax)
 
         for ax in self.sample_axes:
             ax.clear()
             ax.axis("off")
+            ax.set_facecolor(COLOR_SURFACE)
+
+    def _redraw_dashboard_charts(self):
+        """
+        Redraws the loss/accuracy graphs and sample-prediction thumbnails
+        from whatever data is currently known (self.train_losses etc. and
+        the last epoch's sample predictions) -- used both for a normal
+        per-epoch update and to reapply colors after a theme change.
+        """
+        epochs_so_far = range(1, len(self.train_losses) + 1)
+
+        self.loss_ax.clear()
+        self.loss_ax.set_title("Loss (lower is better)")
+        self.loss_ax.set_xlabel("Epoch")
+        self.loss_ax.plot(
+            epochs_so_far, self.train_losses, label="Train", color=COLOR_TRAIN, linewidth=2, marker="o", markersize=4
+        )
+        self.loss_ax.plot(
+            epochs_so_far, self.test_losses, label="Test", color=COLOR_TEST, linewidth=2, marker="o", markersize=4
+        )
+        self.loss_ax.legend(loc="upper right")
+        _style_axes(self.loss_ax)
+
+        self.acc_ax.clear()
+        self.acc_ax.set_title("Accuracy (higher is better)")
+        self.acc_ax.set_xlabel("Epoch")
+        self.acc_ax.set_ylim(0, 1)
+        self.acc_ax.plot(
+            epochs_so_far, self.train_accs, label="Train", color=COLOR_TRAIN, linewidth=2, marker="o", markersize=4
+        )
+        self.acc_ax.plot(
+            epochs_so_far, self.test_accs, label="Test", color=COLOR_TEST, linewidth=2, marker="o", markersize=4
+        )
+        self.acc_ax.legend(loc="lower right")
+        _style_axes(self.acc_ax)
+
+        if self.last_sample_images is not None:
+            predicted_labels = np.argmax(self.last_sample_predictions, axis=1)
+            for i, ax in enumerate(self.sample_axes):
+                ax.clear()
+                ax.axis("off")
+                ax.set_facecolor(COLOR_SURFACE)
+                ax.imshow(self.last_sample_images[i].squeeze(), cmap="gray")
+                true_label = int(self.last_sample_labels[i])
+                predicted_label = int(predicted_labels[i])
+                color = COLOR_GOOD if predicted_label == true_label else COLOR_CRITICAL
+                ax.set_title(f"true {true_label} / guess {predicted_label}", color=color, fontsize=8, fontweight="bold")
+        else:
+            for ax in self.sample_axes:
+                ax.clear()
+                ax.axis("off")
+                ax.set_facecolor(COLOR_SURFACE)
 
     # ---------------- Button handlers ----------------
     def on_train_clicked(self):
+        if self.model is not None and not messagebox.askyesno(
+            "Train Model", "A trained model is already loaded. Training a new one will overwrite it. Continue?"
+        ):
+            return
         self._train_model()
 
     def on_retrain_clicked(self):
@@ -870,33 +1062,11 @@ class DigitRecognizerApp:
         self.train_acc_var.set(f"Train Accuracy: {logs.get('accuracy') * 100:.2f}%")
         self.test_acc_var.set(f"Test Accuracy: {logs.get('val_accuracy') * 100:.2f}%")
 
-        epochs_so_far = range(1, len(self.train_losses) + 1)
+        self.last_sample_images = sample_images
+        self.last_sample_labels = sample_labels
+        self.last_sample_predictions = sample_predictions
 
-        self.loss_ax.clear()
-        self.loss_ax.set_title("Loss (lower is better)")
-        self.loss_ax.set_xlabel("Epoch")
-        self.loss_ax.plot(epochs_so_far, self.train_losses, label="Train", color=COLOR_TRAIN, linewidth=2, marker="o", markersize=4)
-        self.loss_ax.plot(epochs_so_far, self.test_losses, label="Test", color=COLOR_TEST, linewidth=2, marker="o", markersize=4)
-        self.loss_ax.legend(loc="upper right")
-
-        self.acc_ax.clear()
-        self.acc_ax.set_title("Accuracy (higher is better)")
-        self.acc_ax.set_xlabel("Epoch")
-        self.acc_ax.set_ylim(0, 1)
-        self.acc_ax.plot(epochs_so_far, self.train_accs, label="Train", color=COLOR_TRAIN, linewidth=2, marker="o", markersize=4)
-        self.acc_ax.plot(epochs_so_far, self.test_accs, label="Test", color=COLOR_TEST, linewidth=2, marker="o", markersize=4)
-        self.acc_ax.legend(loc="lower right")
-
-        predicted_labels = np.argmax(sample_predictions, axis=1)
-        for i, ax in enumerate(self.sample_axes):
-            ax.clear()
-            ax.axis("off")
-            ax.imshow(sample_images[i].squeeze(), cmap="gray")
-            true_label = int(sample_labels[i])
-            predicted_label = int(predicted_labels[i])
-            color = COLOR_GOOD if predicted_label == true_label else COLOR_CRITICAL
-            ax.set_title(f"true {true_label} / guess {predicted_label}", color=color, fontsize=8, fontweight="bold")
-
+        self._redraw_dashboard_charts()
         self.dashboard_canvas.draw()
         self.root.update_idletasks()
         self.root.update()
@@ -923,13 +1093,16 @@ class DigitRecognizerApp:
         predicted_digit = int(np.argmax(probabilities))
         confidence = float(probabilities[predicted_digit]) * 100
 
+        self.last_probabilities = probabilities
+        self.last_predicted_digit = predicted_digit
+
         self.prediction_var.set(f"Prediction: {predicted_digit}    Confidence: {confidence:.1f}%")
 
         self._show_image_in_label(original_image, self.original_image_label, max_size=(220, 220))
         self._show_image_in_label(processed_display, self.processed_image_label, max_size=(220, 220))
 
-        self._update_confidence_text(probabilities, predicted_digit)
-        self._update_probability_chart(probabilities, predicted_digit)
+        self._update_confidence_text()
+        self._update_probability_chart()
 
     def _show_image_in_label(self, pil_image, label_widget, max_size):
         display_copy = pil_image.copy()
@@ -941,24 +1114,29 @@ class DigitRecognizerApp:
         else:
             self.displayed_processed_photo = photo
 
-    def _update_confidence_text(self, probabilities, predicted_digit):
+    def _update_confidence_text(self):
+        """Redraws the digit-by-digit confidence text from self.last_probabilities."""
         self.confidence_text.configure(state=tk.NORMAL)
         self.confidence_text.delete("1.0", tk.END)
         self.confidence_text.tag_configure("predicted", foreground=COLOR_ACCENT, font=("Courier", 11, "bold"))
-        for digit in range(10):
-            marker = " <--" if digit == predicted_digit else ""
-            line = f"{digit}  {probabilities[digit] * 100:5.1f}%{marker}\n"
-            tag = "predicted" if digit == predicted_digit else ()
-            self.confidence_text.insert(tk.END, line, tag)
+        if self.last_probabilities is not None:
+            for digit in range(10):
+                marker = " <--" if digit == self.last_predicted_digit else ""
+                line = f"{digit}  {self.last_probabilities[digit] * 100:5.1f}%{marker}\n"
+                tag = "predicted" if digit == self.last_predicted_digit else ()
+                self.confidence_text.insert(tk.END, line, tag)
         self.confidence_text.configure(state=tk.DISABLED)
 
-    def _update_probability_chart(self, probabilities, predicted_digit):
+    def _update_probability_chart(self):
+        """Redraws the confidence bar chart from self.last_probabilities."""
         self.probability_ax.clear()
         self.probability_ax.set_title("Prediction confidence by digit")
         self.probability_ax.set_ylim(0, 100)
         self.probability_ax.set_xticks(range(10))
-        colors = [COLOR_ACCENT if d == predicted_digit else COLOR_AXIS for d in range(10)]
-        self.probability_ax.bar(range(10), probabilities * 100, color=colors)
+        if self.last_probabilities is not None:
+            colors = [COLOR_ACCENT if d == self.last_predicted_digit else COLOR_AXIS for d in range(10)]
+            self.probability_ax.bar(range(10), self.last_probabilities * 100, color=colors)
+        _style_axes(self.probability_ax)
         self.probability_canvas.draw()
 
 

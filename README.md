@@ -106,7 +106,9 @@ With the virtual environment set up and dependencies installed:
   ```
 
 A window titled "Teaching a Neural Network to Read Handwriting" opens with
-buttons across the top.
+buttons across the top. There's a **Dark Mode** / **Light Mode** button in
+the top-right corner if you'd rather not stare at a bright white window —
+click it any time to switch, including mid-training.
 
 ---
 
