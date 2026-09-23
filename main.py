@@ -67,13 +67,15 @@ IMAGE_SIZE = 640               # training / detection image size in pixels (mult
 BATCH_SIZE = 8                 # images per training step (lower it if you run out of memory)
 CONFIDENCE_THRESHOLD = 0.35    # webcam: only show detections at least this confident
 
-PSEUDO_LABEL_CONFIDENCE = 0.50  # replay: keep stock-YOLO boxes at least this confident as pseudo-labels
+PSEUDO_LABEL_CONFIDENCE = 0.25  # replay: keep stock-YOLO boxes at least this confident as pseudo-labels
+                                #   (low on purpose: objects the teacher misses are taught as "background")
 VALIDATION_FRACTION = 0.20      # 20 % of images go to validation, 80 % to training
 FREEZE_LAYERS = 10              # freeze the first 10 layers (the YOLO11 backbone) during training; 0 = train all
 PATIENCE = 0                    # early stopping; 0 = off (the cube score starts near zero, so early
                                 #   epochs can look like "no improvement" even though training is working)
-OPTIMIZER = "SGD"               # Ultralytics' standard optimizer for fine-tuning ("auto" is too cautious here)
-LEARNING_RATE = 0.01            # SGD starting learning rate (Ultralytics default lr0)
+OPTIMIZER = "SGD"               # SGD learns the new class reliably ("auto" picks a tiny AdamW rate that doesn't)
+LEARNING_RATE = 0.002           # SGD starting learning rate: higher learns the cube faster but forgets
+                                #   more of the 80 original classes (0.01 = Ultralytics default)
 WORKERS = 2                     # data-loading processes (0 or 2 is safest on Windows laptops)
 DEVICE = None                   # None = automatic (NVIDIA GPU if available, else CPU). Or "cpu", "0", "mps"
 RANDOM_SEED = 42                # makes training repeatable
@@ -1183,28 +1185,35 @@ def train_model():
         return
 
     print("\n[5/5] Saving the trained model...")
-    best = Path(model.trainer.best) if getattr(model, "trainer", None) else None
-    if best is None or not best.exists():
-        best = RUNS_DIR / "detect" / TRAIN_RUN_NAME / "weights" / "best.pt"
-    if not best.exists():
-        print("ERROR: Training finished but best.pt was not found in runs/detect/.")
+    # We keep the model from the LAST epoch, not Ultralytics' "best.pt". Why? "best" is chosen by the
+    # validation score, and most validation labels are pseudo-labels MADE BY THE STOCK MODEL. So the
+    # untouched model from epoch 1 always looks "best" on them, even though it can't detect the cube yet.
+    run_dir = Path(model.trainer.save_dir) if getattr(model, "trainer", None) else (
+        RUNS_DIR / "detect" / TRAIN_RUN_NAME)
+    last = run_dir / "weights" / "last.pt"
+    if not last.exists():
+        print(f"ERROR: Training finished but {last} was not found.")
         return
-    shutil.copy2(best, FINAL_WEIGHTS)
+    shutil.copy2(last, FINAL_WEIGHTS)
     final = YOLO(str(FINAL_WEIGHTS))
     ok = len(final.names) == 81 and final.names[CUBE_CLASS_ID] == CUBE_CLASS_NAME
     print(f"      Final model classes: {len(final.names)}  (0 = '{final.names[0]}', ..., "
           f"80 = '{final.names[CUBE_CLASS_ID]}')  {'OK' if ok else 'UNEXPECTED!'}")
+    print("      Checking the final model on the validation images...")
     try:
+        metrics = final.val(data=str(DATA_YAML), imgsz=IMAGE_SIZE, batch=BATCH_SIZE, workers=WORKERS,
+                            plots=False, verbose=False, project=str(RUNS_DIR / "detect"),
+                            name=TRAIN_RUN_NAME + "_final_check", exist_ok=True, **device_arguments())
         ap_classes = [int(c) for c in metrics.box.ap_class_index]
-        print(f"      Validation mAP50 (all classes): {metrics.box.map50:.3f}")
         if CUBE_CLASS_ID in ap_classes:
             print(f"      Validation AP50 for {CUBE_CLASS_NAME}: "
-                  f"{metrics.box.ap50[ap_classes.index(CUBE_CLASS_ID)]:.3f}")
-        print("      (replay classes are scored against pseudo-labels, so treat those numbers as rough.)")
-    except Exception:
-        pass
+                  f"{metrics.box.ap50[ap_classes.index(CUBE_CLASS_ID)]:.3f}   (1.0 = perfect)")
+        print(f"      Validation mAP50, all classes: {metrics.box.map50:.3f}   (classes 0-79 are scored "
+              "against pseudo-labels, so treat that part as rough)")
+    except Exception as error:
+        print(f"      (Skipped the final check: {error})")
     print(f"\nTrained 81-class model saved to:\n    {FINAL_WEIGHTS}")
-    print(f"Training charts and logs: {best.parent.parent}")
+    print(f"Training charts and logs: {run_dir}")
     print("Next step: option 6 (Test the trained model with webcam).")
 
 
@@ -1220,7 +1229,7 @@ def test_trained_model():
         return
     weights = FINAL_WEIGHTS
     if not weights.exists():
-        fallback = RUNS_DIR / "detect" / TRAIN_RUN_NAME / "weights" / "best.pt"
+        fallback = RUNS_DIR / "detect" / TRAIN_RUN_NAME / "weights" / "last.pt"
         if not fallback.exists():
             print(f"No trained model found at {FINAL_WEIGHTS}.")
             print("Run option 5 (Train the new 81-class model) first.")

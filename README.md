@@ -88,7 +88,7 @@ Vibecoding-Jawn/                 <- open this folder in PyCharm
 │   ├── yolo11n.pt               <- official pretrained weights (downloaded once automatically)
 │   ├── yolo11n_81class_start.pt <- the widened 81-class starting point (option 5)
 │   └── rubiks_cube_81.pt        <- YOUR TRAINED 81-CLASS MODEL (option 5)
-└── runs/detect/rubiks_cube_81/  <- Ultralytics training charts, logs, best.pt / last.pt
+└── runs/detect/rubiks_cube_81/  <- Ultralytics training charts, logs, last.pt (+ best.pt, unused)
 ```
 
 ## 3. Installation
@@ -125,12 +125,12 @@ EPOCHS = 30
 IMAGE_SIZE = 640
 BATCH_SIZE = 8
 CONFIDENCE_THRESHOLD = 0.35    # webcam display threshold
-PSEUDO_LABEL_CONFIDENCE = 0.50 # replay pseudo-label threshold
+PSEUDO_LABEL_CONFIDENCE = 0.25 # replay pseudo-label threshold
 VALIDATION_FRACTION = 0.20     # 80 % train / 20 % val
 FREEZE_LAYERS = 10             # freeze the YOLO11 backbone
 PATIENCE = 0                   # early stopping off
 OPTIMIZER = "SGD"
-LEARNING_RATE = 0.01
+LEARNING_RATE = 0.002
 WORKERS = 2
 DEVICE = None                  # auto; or "cpu", "0", "mps"
 CAMERA_INDEX = 0
@@ -217,8 +217,11 @@ The labeling window shows one photo at a time and starts at the first photo that
    stock detections live, so you can see what will be labeled. Walk around your room and press A for
    auto-capture. More variety means better protection for the original classes.
 3. **Pseudo-labeling:** stock YOLO11 runs on each replay image. Every box with confidence ≥
-   `PSEUDO_LABEL_CONFIDENCE` (0.50) is saved as a label with its original class id (0–79). Replay images
-   where the teacher found nothing are skipped. You can keep them as background images by setting
+   `PSEUDO_LABEL_CONFIDENCE` (0.25) is saved as a label with its original class id (0–79). The
+   threshold is low on purpose. Any object the teacher is unsure about and leaves unlabeled is taught as
+   "background", which pushes the old classes' scores down. In testing, 0.25 retained the original
+   classes better than 0.50. Replay images where the teacher found nothing are skipped. You can keep
+   them as background images by setting
    `KEEP_EMPTY_REPLAY_IMAGES = True`.
 4. **Cube photos get pseudo-labels too:** the person holding the cube, the laptop on the desk and so on
    are also labeled by the teacher. Without this, the training would learn that those objects are
@@ -267,16 +270,39 @@ it from `replay_images/` and run option 3 again.
    ```python
    YOLO("weights/yolo11n_81class_start.pt").train(
        data="dataset/data.yaml", epochs=30, imgsz=640, batch=8,
-       optimizer="SGD", lr0=0.01, freeze=10, patience=0, ...)
+       optimizer="SGD", lr0=0.002, freeze=10, patience=0, ...)
    ```
    * `freeze=10` freezes the YOLO11 backbone (layers 0–9). Its general visual features stay fixed. The
      neck and head learn the cube, and the replay data keeps them good at the 80 old classes.
    * Early stopping is off (`PATIENCE = 0`). At first the new class barely registers in the overall
      validation score, so Ultralytics would stop training too early.
-   * SGD with lr0 = 0.01 is Ultralytics' standard fine-tuning setup. In testing, the `auto` choice
-     (AdamW with a tiny learning rate) did not learn the new class in 30 epochs.
-4. **Save:** `runs/detect/rubiks_cube_81/weights/best.pt` is copied to **`weights/rubiks_cube_81.pt`**.
-   The program reloads it and confirms: 81 classes, class 80 = `rubiks_cube`.
+   * `SGD` at `lr0 = 0.002`: the `auto` choice (AdamW with a tiny learning rate) never learned the new
+     class in 30 epochs. The Ultralytics default of 0.01 learned it but forgot more of the old classes.
+     See the table below.
+4. **Save:** `runs/detect/rubiks_cube_81/weights/last.pt` is copied to **`weights/rubiks_cube_81.pt`**.
+   The final-epoch model is used, not Ultralytics' `best.pt`. `best.pt` is chosen by validation score,
+   and most validation labels are pseudo-labels *made by the stock model*, so the untouched epoch-1 model
+   always looks "best" even though it can't detect the cube yet. The program reloads the saved file,
+   confirms it has 81 classes with class 80 = `rubiks_cube`, and prints the cube's validation AP.
+
+### What the settings were based on
+
+These defaults were chosen by testing the whole pipeline. The test used 96 COCO images as replay
+images, pseudo-labeled by this program, plus 13 synthetic Rubik's-cube photos. Each setting was trained
+for 30 epochs on a CPU at 320 px. Forgetting was measured on **32 separate COCO images with real
+human labels**, which were never used for training:
+
+| Setup | Cube AP50 | Original 80 classes, held-out mAP50-95 (stock = 0.426) |
+|---|---|---|
+| Ultralytics' built-in 80→81 loading (no head widening), SGD 0.01 | 0.995 | 0.069, almost everything forgotten |
+| Widened head, SGD 0.01, pseudo-label conf 0.50 | 0.995 | 0.236 |
+| Widened head, `optimizer="auto"` | 0.000, cube never learned | 0.388 |
+| Widened head, SGD 0.002, pseudo-label conf 0.50 | 0.863 | 0.383 |
+| **Widened head, SGD 0.002, pseudo-label conf 0.25 (defaults)** | **0.995** | **0.386, about 91 % of stock kept** |
+
+Some forgetting is unavoidable with a small pseudo-labeled replay set. More replay images, especially
+ones that show the objects you care about, keep more of the original performance. The cube numbers come
+from synthetic cube images, so your real results will depend on your photos.
 
 **Time:** on a laptop CPU, expect roughly 1–3 minutes per epoch for about 200 images at 640 px. To do a
 quick test run first, lower `EPOCHS` (e.g. 5) or `IMAGE_SIZE` (e.g. 416).
@@ -317,5 +343,6 @@ and run options 3 and 5 again. You can also lower `CONFIDENCE_THRESHOLD`.
 | Training is very slow | That's normal on a CPU. Lower `EPOCHS`/`IMAGE_SIZE`, or use an NVIDIA GPU. |
 | Cube not detected in option 6 | Add more (webcam) cube photos with varied angles and backgrounds, re-label, re-run 3 and 5. Lower `CONFIDENCE_THRESHOLD` to 0.25. |
 | An original class got worse | Add replay images that contain that object, re-run 3 and 5. |
+| Ultralytics prints "downloading yolo26n.pt for AMP checks" | Normal on NVIDIA GPUs: it's a one-time self-test file and isn't used for training. |
 | Option 6 says "No trained model found" | Run option 5 first. It saves `weights/rubiks_cube_81.pt`. |
 | Moved the project folder | Run option 3 again (`data.yaml` stores the absolute dataset path). |
