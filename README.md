@@ -78,6 +78,21 @@ behind the newest Python release.
 If a future project needs a *different* Python version, just repeat step 3
 for that project — your 3.11 and 3.14 installs stay untouched.
 
+### Optional: use your Mac's GPU instead of just the CPU
+
+If you're on an Apple Silicon Mac (M1/M2/M3/M4/M5), TensorFlow runs on CPU
+only by default -- one extra package lets it use the GPU instead, which can
+noticeably cut training time. In the same terminal:
+```
+pip install tensorflow-metal
+```
+No code changes needed; TensorFlow detects it automatically. To confirm it
+worked:
+```
+python -c "import tensorflow as tf; print(tf.config.list_physical_devices('GPU'))"
+```
+You should see a GPU device listed (not an empty list).
+
 ---
 
 ## 2. Running the program
