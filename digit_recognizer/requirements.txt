@@ -1,0 +1,6 @@
+# Compatible with Python 3.9 - 3.12 (NOT Python 3.14 yet - see README.md).
+tensorflow>=2.17,<2.21
+numpy>=1.26,<2.2
+pillow>=10.0
+matplotlib>=3.8
+scipy>=1.11
