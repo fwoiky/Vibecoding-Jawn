@@ -1,0 +1,310 @@
+<title>Project 15a Test Log</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@112,600;112,800&family=Public+Sans:wght@400;600&family=JetBrains+Mono:wght@400;600&display=swap">
+<style id="page-css">
+/* Layout: one 820px column like a lab test sheet; a frame-strip progress header, then sections in run order. */
+:root {
+  --bg: #f6f8fa; --surface: #ffffff; --ink: #18222d; --muted: #5b6b7b; --line: #d7dee6;
+  --accent: #1d5f8a; --accent-soft: #e3eef6; --done: #2f7d4f; --done-soft: #e4f2e9; --amber: #a86400; --amber-soft: #fbefd9;
+  --display: "Archivo", "Arial Narrow", system-ui, sans-serif;
+  --body: "Public Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0f151b; --surface: #17202a; --ink: #e4ebf2; --muted: #93a3b3; --line: #2a3643;
+  --accent: #6db3e3; --accent-soft: #1b3346; --done: #6cc792; --done-soft: #183526; --amber: #f0b45a; --amber-soft: #3a2b14; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #0f151b; --surface: #17202a; --ink: #e4ebf2; --muted: #93a3b3; --line: #2a3643;
+  --accent: #6db3e3; --accent-soft: #1b3346; --done: #6cc792; --done-soft: #183526; --amber: #f0b45a; --amber-soft: #3a2b14; color-scheme: dark }
+* { box-sizing: border-box }
+body { background: var(--bg); color: var(--ink); font: 15px/1.55 var(--body) }
+.wrap { max-width: 820px; margin: 0 auto; padding-block: 28px 120px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: grid; gap: 28px }
+header { display: grid; gap: 10px }
+.eyebrow { font: 600 12px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--muted) }
+h1 { font: 800 clamp(28px, 6vw, 40px)/1.05 var(--display); font-stretch: 112%; margin: 0; text-wrap: balance }
+h2 { font: 600 20px/1.2 var(--display); font-stretch: 112%; margin: 0; text-wrap: balance }
+.lede { color: var(--muted); margin: 0; max-width: 62ch }
+.chips { display: flex; flex-wrap: wrap; gap: 6px }
+.chip { font: 12px var(--mono); padding: 2px 8px; border: 1px solid var(--line); border-radius: 4px; background: var(--surface); color: var(--muted) }
+.meters { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px }
+.meter { display: grid; gap: 6px; min-width: 0 }
+.meter b { font: 600 13px var(--body) }
+.meter span { font: 12px var(--mono); color: var(--muted); font-variant-numeric: tabular-nums }
+.strip { display: flex; gap: 2px; height: 14px }
+.strip i { flex: 1; border-radius: 1px; background: var(--line) }
+.strip i.on { background: var(--accent) }
+section { display: grid; gap: 12px }
+.sec-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; border-bottom: 2px solid var(--ink); padding-bottom: 6px }
+.sec-head .count { font: 12px var(--mono); color: var(--muted); font-variant-numeric: tabular-nums }
+.note { color: var(--muted); font-size: 14px; margin: 0 }
+.status { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px }
+.status > div { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 12px 14px; min-width: 0 }
+.status h3 { font: 600 13px var(--mono); letter-spacing: .06em; text-transform: uppercase; margin: 0 0 6px }
+.status .ok h3 { color: var(--done) } .status .todo h3 { color: var(--amber) }
+.status ul { margin: 0; padding-left: 18px; font-size: 14px; display: grid; gap: 4px }
+.list { display: grid; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); overflow: hidden }
+.row { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 4px 10px; padding: 10px 14px; border-top: 1px solid var(--line); align-items: start }
+.row:first-child { border-top: 0 }
+.row.done { background: var(--done-soft) }
+.row input[type=checkbox] { width: 18px; height: 18px; margin: 3px 0 0; accent-color: var(--done); cursor: pointer }
+.row label { cursor: pointer }
+.row .tag { font: 11px var(--mono); color: var(--muted); margin-left: 6px }
+.row .sub { grid-column: 2; }
+input[type=text], textarea { width: 100%; font: 14px var(--body); color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 4px; padding: 6px 8px }
+textarea { resize: vertical; min-height: 58px }
+input[type=text]::placeholder, textarea::placeholder { color: var(--muted); opacity: .8 }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px }
+.exp { display: grid; gap: 8px; background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 12px 14px }
+.exp.logged { border-left: 4px solid var(--done) }
+.exp-top { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; align-items: baseline }
+.exp-top b { font: 600 15px var(--body) }
+.exp-top code { font: 12px var(--mono); color: var(--accent); background: var(--accent-soft); padding: 1px 6px; border-radius: 3px }
+.exp-fields { display: grid; grid-template-columns: minmax(0, 1fr) 110px 150px; gap: 8px }
+.exp-fields label { display: grid; gap: 3px; font: 11px var(--mono); color: var(--muted); text-transform: uppercase; letter-spacing: .05em; min-width: 0 }
+.savebar { position: fixed; left: 0; right: 0; bottom: 0; background: var(--surface); border-top: 1px solid var(--line);
+  padding-block: 10px calc(10px + env(safe-area-inset-bottom, 0px));
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)) }
+.savebar .in { max-width: 820px; margin: 0 auto; display: flex; gap: 12px; align-items: center; justify-content: space-between; flex-wrap: wrap }
+.savebar p { margin: 0; font-size: 13px; color: var(--muted) }
+.savebar p.warn { color: var(--amber) }
+button { font: 600 14px var(--body); padding: 8px 16px; border-radius: 5px; border: 1px solid var(--accent); background: var(--accent); color: var(--surface); cursor: pointer }
+button:disabled { opacity: .45; cursor: default }
+button.ghost { background: transparent; color: var(--accent) }
+footer { font-size: 13px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 12px }
+@media (max-width: 640px) {
+  .meters, .status { grid-template-columns: minmax(0, 1fr) }
+  .exp-fields { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) }
+  .exp-fields label:first-child { grid-column: 1 / -1 }
+}
+@media (prefers-reduced-motion: no-preference) { .strip i { transition: background .2s } }
+</style>
+<div id="app" class="wrap"></div>
+<script type="application/json" id="page-state">{"tests":{},"exps":{},"demo":{},"savedAt":null}</script>
+<script id="page-js">
+(function () {
+  const TESTS = [
+    ["gpu", "GPU status is detected and displayed", "Step 1"],
+    ["sw-flicker", "SHOW_FLICKER = False skips Part 1", "switch"],
+    ["sw-anim", "SHOW_ANIMATEDIFF = False skips Part 2", "switch"],
+    ["sw-panel", "SHOW_PANEL = False hides the panel", "switch"],
+    ["p1", "Part 1 generates independent images and a playable looping video", "Part 1"],
+    ["p2", "Part 2 generates an AnimateDiff clip and displays elapsed time", "Part 2"],
+    ["seedinfo", "Prompt and seed information are visible on every clip", "labels"],
+    ["panel", "Interactive panel generates a new clip", "Part 3"],
+    ["play", "Completed clips play inside the notebook", "playback"],
+    ["mp4", "MP4 files are saved in /content/project15a_outputs/", "export"],
+    ["zip", "Download all creates a valid project15a_videos.zip", "Part 3"],
+    ["mem", "Memory cleanup is handled between pipelines (GPU free line after Part 2)", "memory"],
+    ["fail", "A failure shows a useful error and keeps completed files", "errors"],
+    ["docs", "Demo and troubleshooting instructions are ready", "README"],
+  ];
+  const EXPS = [
+    ["cmp", "Part 1 vs Part 2", "seeds 42–57 vs seed 42"],
+    ["f8", "Frame count", "FRAMES = 8"],
+    ["f16", "Frame count", "FRAMES = 16"],
+    ["f24", "Frame count", "FRAMES = 24"],
+    ["s10", "Inference steps", "STEPS = 10"],
+    ["s25", "Inference steps", "STEPS = 25"],
+    ["s40", "Inference steps", "STEPS = 40"],
+    ["seed", "Seed", "same prompt, new seed"],
+    ["move", "Moving prompt", "waves / flag / car"],
+    ["tricky", "Tricky prompt", "“A cat jumping onto a horse”"],
+  ];
+  const DEMO = [
+    ["d1", "Show the three switches and the settings at the top of the cell"],
+    ["d2", "Run the cell; point out the GPU status box and progress bars"],
+    ["d3", "Part 1: frame grid with seeds, then the flickering loop"],
+    ["d4", "Part 2: AnimateDiff frames, seed and time, then the loop"],
+    ["d5", "Play both side by side and describe what you actually see"],
+    ["d6", "Part 3: type a new prompt, press Make clip, show the seed label"],
+    ["d7", "Press Download all and open project15a_videos.zip"],
+    ["d8", "Close with responsible use: every clip is labelled AI-generated"],
+  ];
+  const STASH = "p15a-unsaved", LOCAL = "p15a-local";
+
+  let state = JSON.parse(document.getElementById("page-state").textContent);
+  let dirty = false, mode = "pending", saving = false, notice = "";
+  const tryStore = (fn) => { try { return fn(); } catch (e) { return null; } };
+  const stashed = tryStore(() => sessionStorage.getItem(STASH));
+  if (stashed) {
+    tryStore(() => sessionStorage.removeItem(STASH));
+    const s = tryStore(() => JSON.parse(stashed));
+    if (s) { state = s; dirty = true; notice = "Someone saved a newer version while you were editing. Your unsaved changes are restored here; press Save to keep them."; }
+  }
+
+  const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const t = (id) => state.tests[id] || (state.tests[id] = { done: false, note: "" });
+  const x = (id) => state.exps[id] || (state.exps[id] = { saw: "", time: "", best: "" });
+  const logged = (id) => !!(state.exps[id] && state.exps[id].saw.trim());
+  const strip = (n, total) => '<div class="strip" aria-hidden="true">' + Array.from({ length: total }, (_, i) => `<i class="${i < n ? "on" : ""}"></i>`).join("") + "</div>";
+
+  function render() {
+    const nT = TESTS.filter(([id]) => state.tests[id]?.done).length;
+    const nE = EXPS.filter(([id]) => logged(id)).length;
+    const nD = DEMO.filter(([id]) => state.demo[id]).length;
+    const ro = mode === "readonly";
+    const dis = ro ? " disabled" : "";
+    document.getElementById("app").innerHTML = `
+      <header>
+        <div class="eyebrow">ENGR-126 · Project 15a · AnimateDiff</div>
+        <h1>Project 15a Test Log</h1>
+        <p class="lede">Tick each check as you confirm it in Colab, and write down what you actually saw for each experiment. Don't assume AnimateDiff always looks better.</p>
+        <div class="chips"><span class="chip">SD 1.5</span><span class="chip">animatediff-motion-adapter-v1-5-2</span><span class="chip">T4 · fp16</span><span class="chip">16 f · 25 steps · seed 42</span></div>
+      </header>
+      <div class="meters">
+        <div class="meter"><b>Tests passed</b>${strip(nT, TESTS.length)}<span>${nT} / ${TESTS.length}</span></div>
+        <div class="meter" id="meter-exp"><b>Experiments logged</b>${strip(nE, EXPS.length)}<span>${nE} / ${EXPS.length}</span></div>
+        <div class="meter"><b>Demo rehearsed</b>${strip(nD, DEMO.length)}<span>${nD} / ${DEMO.length}</span></div>
+      </div>
+      <section>
+        <div class="sec-head"><h2>Verification status</h2></div>
+        <div class="status">
+          <div class="ok"><h3>Checked before Colab</h3><ul>
+            <li>Python syntax compiles</li>
+            <li>Diffusers calls match the 0.42 source</li>
+            <li>Switches, re-run reuse and error handling, with mocked models</li>
+            <li>MP4 is H.264 / yuv420p and browser-playable</li>
+            <li>ZIP holds MP4s, metadata.json and README.txt</li></ul></div>
+          <div class="todo"><h3>Needs your Colab run</h3><ul>
+            <li>Real model download and generation on a T4</li>
+            <li>GPU memory use and timing</li>
+            <li>How the frames and videos look</li>
+            <li>Widget panel and browser download in Colab</li></ul></div>
+        </div>
+      </section>
+      <section>
+        <div class="sec-head"><h2>Testing checklist</h2><span class="count">${nT}/${TESTS.length}</span></div>
+        <div class="list">${TESTS.map(([id, label, tag]) => `
+          <div class="row${t(id).done ? " done" : ""}">
+            <input type="checkbox" id="t-${id}" data-k="tests.${id}.done"${t(id).done ? " checked" : ""}${dis}>
+            <label for="t-${id}">${esc(label)}<span class="tag">${esc(tag)}</span></label>
+            <div class="sub"><input type="text" id="tn-${id}" data-k="tests.${id}.note" value="${esc(t(id).note)}" placeholder="Note (optional)"${dis}></div>
+          </div>`).join("")}</div>
+      </section>
+      <section>
+        <div class="sec-head"><h2>Experiment log</h2><span class="count" id="count-exp">${nE}/${EXPS.length}</span></div>
+        <p class="note">An experiment counts as logged once "What I saw" is filled in.</p>
+        ${EXPS.map(([id, name, change]) => `
+          <div class="exp${logged(id) ? " logged" : ""}" id="exp-${id}">
+            <div class="exp-top"><b>${esc(name)}</b><code>${esc(change)}</code></div>
+            <div class="exp-fields">
+              <label>What I saw<textarea id="e-${id}-saw" data-k="exps.${id}.saw" placeholder="Flicker? Warping? Detail?"${dis}>${esc(x(id).saw)}</textarea></label>
+              <label>Time (s)<input type="text" id="e-${id}-time" data-k="exps.${id}.time" value="${esc(x(id).time)}" inputmode="decimal"${dis}></label>
+              <label>Best value<input type="text" id="e-${id}-best" data-k="exps.${id}.best" value="${esc(x(id).best)}"${dis}></label>
+            </div>
+          </div>`).join("")}
+      </section>
+      <section>
+        <div class="sec-head"><h2>Demo run-through</h2><span class="count">${nD}/${DEMO.length}</span></div>
+        <div class="list">${DEMO.map(([id, label]) => `
+          <div class="row${state.demo[id] ? " done" : ""}">
+            <input type="checkbox" id="${id}" data-k="demo.${id}"${state.demo[id] ? " checked" : ""}${dis}>
+            <label for="${id}">${esc(label)}</label>
+          </div>`).join("")}</div>
+      </section>
+      <footer>All clips are AI-generated; label them that way when you share them. ${state.savedAt ? "Last saved " + esc(new Date(state.savedAt).toLocaleString()) + "." : "Not saved yet."}</footer>`;
+    renderBar();
+  }
+
+  function renderBar() {
+    let bar = document.getElementById("savebar");
+    if (!bar) { bar = document.createElement("div"); bar.id = "savebar"; bar.className = "savebar"; document.body.appendChild(bar); }
+    const msg = notice ? `<p class="warn">${esc(notice)}</p>`
+      : mode === "readonly" ? "<p>You can view this log but not edit it.</p>"
+      : mode === "local" ? `<p>${dirty ? "Unsaved changes." : "Saved."} This view saves in this browser only.</p>`
+      : `<p>${dirty ? "Unsaved changes." : "All changes saved."}</p>`;
+    const btn = mode === "readonly" ? "" : `<button id="save-btn"${!dirty || saving ? " disabled" : ""}>${saving ? "Saving…" : "Save"}</button>`;
+    bar.innerHTML = `<div class="in">${msg}${btn}</div>`;
+    const b = document.getElementById("save-btn"); if (b) b.onclick = save;
+  }
+
+  function setPath(path, value) {
+    const [a, b, c] = path.split(".");
+    if (a === "demo") state.demo[b] = value;
+    else if (a === "tests") t(b)[c] = value;
+    else x(b)[c] = value;
+  }
+
+  const app = document.getElementById("app");
+  app.addEventListener("change", (e) => {
+    const k = e.target.dataset.k; if (!k) return;
+    if (e.target.type === "checkbox") { setPath(k, e.target.checked); dirty = true; notice = ""; render(); document.getElementById(e.target.id)?.focus(); }
+  });
+  app.addEventListener("input", (e) => {
+    const k = e.target.dataset.k; if (!k || e.target.type === "checkbox") return;
+    setPath(k, e.target.value);
+    if (k.startsWith("exps.")) updateExpSummary(k.split(".")[1]);   // in place, so typing never loses focus
+    if (!dirty) { dirty = true; notice = ""; renderBar(); }
+  });
+
+  function updateExpSummary(id) {
+    document.getElementById("exp-" + id)?.classList.toggle("logged", logged(id));
+    const nE = EXPS.filter(([eid]) => logged(eid)).length;
+    document.querySelectorAll("#meter-exp .strip i").forEach((el, i) => el.classList.toggle("on", i < nE));
+    document.querySelector("#meter-exp span").textContent = `${nE} / ${EXPS.length}`;
+    document.getElementById("count-exp").textContent = `${nE}/${EXPS.length}`;
+  }
+
+  const RESET = ':root{color-scheme:light;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0;font:14px system-ui,sans-serif}img{max-width:100%}[hidden]{display:none!important}';
+  function buildDoc() {
+    const json = JSON.stringify(state).replace(/</g, "\\u003c");
+    const head = document.querySelector('meta[name="claude:viewport-fit-sides"]') ? '<meta name="claude:viewport-fit-sides" content="cover">\n' : "";
+    const fonts = document.querySelector('link[rel="stylesheet"][href*="fonts.googleapis"]');
+    return '<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>' + RESET + '</style></head><body>'
+      + "<title>Project 15a Test Log</title>\n" + head
+      + '<link rel="preconnect" href="https://fonts.googleapis.com">\n'
+      + (fonts ? '<link rel="stylesheet" href="' + fonts.getAttribute("href").replace(/&/g, "&amp;") + '">\n' : "")
+      + '<style id="page-css">' + document.getElementById("page-css").textContent + "</style>\n"
+      + '<div id="app" class="wrap"></div>\n'
+      + '<script type="application/json" id="page-state">' + json + "</scr" + "ipt>\n"
+      + '<script id="page-js">' + document.getElementById("page-js").textContent + "</scr" + "ipt>"
+      + "</body></html>";
+  }
+
+  let artifact = null;
+  async function save() {
+    if (!dirty || saving) return;
+    state.savedAt = new Date().toISOString();
+    if (mode === "local") {
+      tryStore(() => localStorage.setItem(LOCAL, JSON.stringify(state)));
+      dirty = false; render(); return;
+    }
+    saving = true; renderBar();
+    tryStore(() => sessionStorage.setItem(STASH, JSON.stringify(state)));
+    try {
+      await artifact.publish(buildDoc());
+      tryStore(() => sessionStorage.removeItem(STASH));
+      dirty = false;   // the view reloads to the saved version
+    } catch (err) {
+      const code = err && err.code;
+      if (code === "conflict") return;   // reload to the newer version is underway; the stash restores these edits
+      tryStore(() => sessionStorage.removeItem(STASH));
+      if (code === "not_writer" || code === "not_granted" || code === "consent_required" || code === "not_declared" || code === "capability_disabled" || code === "capability_removed") {
+        mode = "local"; notice = "";
+        tryStore(() => localStorage.setItem(LOCAL, JSON.stringify(state)));
+        dirty = false;
+      } else if (code === "rate_limited") {
+        notice = "Saving too often. Wait a moment, then press Save again.";
+      } else {
+        notice = "Couldn't save just now. Your changes are still here; press Save to try again.";
+      }
+    }
+    saving = false; render();
+  }
+
+  render();
+  const useCap = window.claude && window.claude.use ? window.claude.use("artifact") : Promise.resolve(null);
+  Promise.resolve(useCap).then((a) => {
+    artifact = a;
+    if (!a) {
+      mode = "local";
+      const local = tryStore(() => JSON.parse(localStorage.getItem(LOCAL) || "null"));
+      if (local && !dirty && (!state.savedAt || (local.savedAt && local.savedAt > state.savedAt))) state = local;
+    } else mode = "shared";
+    render();
+  }, () => { mode = "local"; render(); });
+})();
+</script>

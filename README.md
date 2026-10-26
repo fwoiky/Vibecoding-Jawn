@@ -12,6 +12,7 @@ A sentence in, a short clip out. One Google Colab cell that:
 | [`project15a_animatediff.ipynb`](project15a_animatediff.ipynb) | The same program as a ready-made notebook (open in Colab) |
 | [`TESTING.md`](TESTING.md) | Testing checklist, experiment log and verification status |
 | [`docs/Project15a_Project_Plan.docx`](docs/Project15a_Project_Plan.docx) | Polished project plan (export to PDF from Word / Google Docs) |
+| [`docs/project15a-test-log.html`](docs/project15a-test-log.html) | Interactive testing checklist + experiment log ([published page](https://claude.ai/artifact/JJ2uqdxTFnUtxSjnVCpAx8)) |
 
 > **Verification status:** the code has been syntax-checked, its Diffusers API calls were checked against the Diffusers 0.42 source, and its control flow, MP4 export (H.264), ZIP packaging and panel buttons were exercised in a mocked dry run *without* real models. It has **not yet been run in Colab on a GPU** — see [`TESTING.md`](TESTING.md).
 
