@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+jarvis.log*
+# models are downloaded on first run
+models/*
+!models/.gitkeep
+# local user data: face templates, encryption key, settings
+users/enrolled_users/*
+!users/enrolled_users/.gitkeep
+users/settings.json
+users/.profile.key

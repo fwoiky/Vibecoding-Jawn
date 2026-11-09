@@ -1,0 +1,33 @@
+# JARVIS V1 - install inside the virtual environment:  pip install -r requirements.txt
+# Windows + NVIDIA GPU: install the CUDA build of PyTorch FIRST (see README, step 3), otherwise
+# ultralytics pulls the CPU-only build from PyPI.
+
+# --- UI / vision -------------------------------------------------------------------
+PySide6-Essentials>=6.6
+numpy>=1.26
+opencv-python>=4.9,<5          # 4.x: face models + YOLO tooling are tested against it
+ultralytics>=8.3               # YOLOv8 person detection (pulls in torch)
+
+# --- storage / config --------------------------------------------------------------
+python-dotenv>=1.0
+cryptography>=42               # encrypts enrolled face templates
+keyring>=24                    # keeps the encryption key in Windows Credential Manager
+requests>=2.31
+
+# --- speech in ---------------------------------------------------------------------
+sounddevice>=0.4.6
+faster-whisper>=1.0            # speech-to-text (GPU via CTranslate2 / CPU fallback)
+onnxruntime>=1.17
+openwakeword>=0.6.0            # local "Hey JARVIS" wake word
+
+# --- speech out --------------------------------------------------------------------
+edge-tts>=6.1                  # default voice: free neural voices (internet required)
+miniaudio>=1.59                # decodes Edge TTS audio without ffmpeg
+# piper-tts                    # optional: fully offline neural voice (set JARVIS_TTS_PROVIDER=piper)
+
+# --- AI ----------------------------------------------------------------------------
+openai>=1.40
+
+# --- optional: GPU speech recognition on Windows (CUDA 12) ---------------------------
+# nvidia-cublas-cu12
+# nvidia-cudnn-cu12==9.*
