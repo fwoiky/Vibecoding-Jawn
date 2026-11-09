@@ -1821,7 +1821,11 @@ def friendly_ai_error(e: Exception) -> str:
     if n == "AuthenticationError":
         return "the API key was rejected (check OPENAI_API_KEY in .env)"
     if n == "RateLimitError":
-        return "the AI service reports a rate limit or exhausted quota"
+        m = str(e).lower()
+        if "credit" in m or "quota" in m or "billing" in m:
+            return ("your AI account has no credits left. Add credits at platform.openai.com/settings/organization/billing, "
+                    "or switch to a free provider (Settings -> AI base URL)")
+        return "the AI service is rate-limiting requests; try again in a moment"
     if n in ("APIConnectionError", "APITimeoutError", "ConnectError", "ReadTimeout"):
         return "I can't reach the AI service - check the internet connection"
     if n == "NotFoundError":
@@ -2340,6 +2344,8 @@ class JarvisCore(QObject):
         if self._ai_spoke:
             self._conv_active = False
             self.speaker.end()
+        elif "credits" in msg:
+            self._canned("Your AI account is out of credits. The details are in the transcript.")
         else:
             self._canned("I couldn't get an answer from my AI service. The details are in the transcript.")
 
@@ -2777,6 +2783,8 @@ class SettingsDialog(QtWidgets.QDialog):
             self.ai.addItem(k)
         self.ai.setCurrentText(s.ai_provider)
         self.model = QtWidgets.QLineEdit(s.openai_model)
+        self.base_url = QtWidgets.QLineEdit(os.getenv("OPENAI_BASE_URL", ""))
+        self.base_url.setPlaceholderText("empty = OpenAI. e.g. https://api.groq.com/openai/v1")
         self.api_key = QtWidgets.QLineEdit()
         self.api_key.setEchoMode(QtWidgets.QLineEdit.EchoMode.Password)
         self.api_key.setPlaceholderText("saved" if os.getenv("OPENAI_API_KEY") else "paste key (saved to .env)")
@@ -2788,7 +2796,7 @@ class SettingsDialog(QtWidgets.QDialog):
                          ("Follow-up window (s)", self.follow), ("End-of-speech silence (s)", self.silence),
                          ("Voice provider", self.tts), ("Edge voice", self.edge_voice),
                          ("ElevenLabs voice ID", self.eleven_voice), ("AI provider", self.ai),
-                         ("OpenAI API key", self.api_key), ("AI model", self.model), ("Whisper model (restart)", self.whisper)]:
+                         ("AI base URL (optional)", self.base_url), ("AI API key", self.api_key), ("AI model", self.model), ("Whisper model (restart)", self.whisper)]:
             form.addRow(label, w)
         note = QtWidgets.QLabel("API keys are stored only in the local .env file (never in settings or logs). Most changes apply immediately.")
         note.setWordWrap(True)
@@ -2814,6 +2822,8 @@ class SettingsDialog(QtWidgets.QDialog):
                       whisper_model=self.whisper.text().strip())
         if self.api_key.text().strip():
             env_file_set("OPENAI_API_KEY", self.api_key.text().strip())
+        if self.base_url.text().strip() != os.getenv("OPENAI_BASE_URL", ""):
+            env_file_set("OPENAI_BASE_URL", self.base_url.text().strip())
         self.core.settings_changed()
         self.accept()
 
