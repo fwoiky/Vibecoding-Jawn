@@ -27,6 +27,74 @@ from __future__ import annotations
 import os
 import sys
 
+# =======================================================================================
+# 0. SELF-SETUP  (runs before anything else, with only the standard library)
+# =======================================================================================
+# Run this file from PyCharm (or `python jarvis.py`) and it will, on first launch only:
+#   1. create a private virtual environment in ./.venv
+#   2. install every dependency (CUDA build of PyTorch first if an NVIDIA GPU is present)
+#   3. restart itself inside that environment
+# Later launches skip all of this and start in a couple of seconds.
+_REQS = [
+    "PySide6-Essentials>=6.6", "numpy>=1.26", "opencv-python>=4.9,<5", "ultralytics>=8.3",
+    "python-dotenv>=1.0", "cryptography>=42", "keyring>=24", "requests>=2.31", "psutil>=5.9",
+    "sounddevice>=0.4.6", "faster-whisper>=1.0", "onnxruntime>=1.17", "tqdm", "scipy", "scikit-learn",
+    "edge-tts>=6.1", "miniaudio>=1.59", "openai>=1.40",
+]
+
+
+def _bootstrap() -> None:
+    if os.environ.get("JARVIS_IN_VENV") == "1" or "--no-bootstrap" in sys.argv:
+        if "--no-bootstrap" in sys.argv:
+            sys.argv.remove("--no-bootstrap")
+        return
+    import hashlib
+    import shutil
+    import subprocess
+    from pathlib import Path
+
+    me = Path(__file__).resolve()
+    venv = me.parent / ".venv"
+    py = venv / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+    say = lambda m: print(f"[JARVIS setup] {m}", flush=True)
+    if sys.version_info < (3, 10):
+        sys.exit("JARVIS needs Python 3.10 or newer (3.11 / 3.12 recommended).")
+    if not py.exists():
+        say("Creating virtual environment (one time)...")
+        if subprocess.call([sys.executable, "-m", "venv", str(venv)]) != 0 or not py.exists():
+            sys.exit("Could not create the virtual environment. Is the 'venv' module installed for this Python?")
+    pip = lambda *a: subprocess.call([str(py), "-m", "pip", "install", "--disable-pip-version-check", *a])
+    has_gpu = bool(shutil.which("nvidia-smi")) or os.path.exists(r"C:\Windows\System32\nvidia-smi.exe")
+    sig = hashlib.sha256((repr(_REQS) + str(has_gpu)).encode()).hexdigest()
+    marker = venv / ".jarvis_deps"
+    if not marker.exists() or marker.read_text().strip() != sig:
+        say("Installing dependencies (one time, ~5-15 minutes, several GB with GPU support). Please wait...")
+        pip("--upgrade", "pip")
+        if has_gpu and os.name == "nt":
+            say("NVIDIA GPU found: installing the CUDA build of PyTorch...")
+            for tag in ("cu126", "cu124", "cu121"):
+                if pip("torch", "torchvision", "--index-url", f"https://download.pytorch.org/whl/{tag}") == 0:
+                    break
+            else:
+                say("CUDA PyTorch not available; JARVIS will use the CPU for person detection.")
+        if pip(*_REQS) != 0 or pip("--no-deps", "openwakeword>=0.6.0") != 0:  # no-deps: skips its Linux-only tflite pin
+            sys.exit("Dependency installation failed - see the messages above. If it mentions a missing wheel, "
+                     "install Python 3.11 or 3.12 (64-bit) and run again.")
+        if has_gpu:
+            pip("nvidia-cublas-cu12", "nvidia-cudnn-cu12==9.*")  # GPU speech recognition; optional
+        marker.write_text(sig)
+        say("Setup complete. Starting JARVIS...")
+    env = dict(os.environ, JARVIS_IN_VENV="1", JARVIS_PARENT_PID=str(os.getpid()))
+    child = subprocess.Popen([str(py), str(me), *sys.argv[1:]], env=env)
+    try:
+        sys.exit(child.wait())
+    except KeyboardInterrupt:
+        child.terminate()
+        sys.exit(0)
+
+
+_bootstrap()
+
 # Must be set before cv2 is imported (much faster webcam start-up on Windows).
 os.environ.setdefault("OPENCV_VIDEOIO_MSMF_ENABLE_HW_TRANSFORMS", "0")
 os.environ.setdefault("OPENCV_LOG_LEVEL", "ERROR")
@@ -72,6 +140,27 @@ except ImportError:  # minimal fallback parser so the app still starts
             if _line and not _line.startswith("#") and "=" in _line:
                 _k, _v = _line.split("=", 1)
                 os.environ.setdefault(_k.strip(), _v.strip().strip('"').strip("'"))
+
+def env_file_set(key: str, value: str) -> None:
+    """Save KEY=value into ./.env (created if missing) and the running process environment."""
+    p = APP_DIR / ".env"
+    lines = p.read_text(encoding="utf-8").splitlines() if p.exists() else []
+    out, done = [], False
+    for ln in lines:
+        if ln.strip().startswith(key + "="):
+            out.append(f"{key}={value}")
+            done = True
+        else:
+            out.append(ln)
+    if not done:
+        out.append(f"{key}={value}")
+    p.write_text("\n".join(out) + "\n", encoding="utf-8")
+    try:
+        os.chmod(p, 0o600)
+    except OSError:
+        pass
+    os.environ[key] = value
+
 
 # ---- hard requirements ----------------------------------------------------------------
 try:
@@ -1956,6 +2045,9 @@ class JarvisCore(QObject):
 
     def settings_changed(self) -> None:
         self.detector.conf = self.s.person_conf
+        if hasattr(self.ai, "_client"):
+            self.ai._client = None  # pick up a newly saved API key
+        self.ai_status.emit(*self.ai_initial_status())
         if self.ai.name != self.s.ai_provider and self.s.ai_provider in AI_PROVIDERS:
             self.ai = AI_PROVIDERS[self.s.ai_provider](self.s)
             self.ai_status.emit(*self.ai_initial_status())
@@ -2629,6 +2721,9 @@ class SettingsDialog(QtWidgets.QDialog):
             self.ai.addItem(k)
         self.ai.setCurrentText(s.ai_provider)
         self.model = QtWidgets.QLineEdit(s.openai_model)
+        self.api_key = QtWidgets.QLineEdit()
+        self.api_key.setEchoMode(QtWidgets.QLineEdit.EchoMode.Password)
+        self.api_key.setPlaceholderText("saved" if os.getenv("OPENAI_API_KEY") else "paste key (saved to .env)")
         self.whisper = QtWidgets.QLineEdit(s.whisper_model)
         for label, w in [("Camera source", self.cam_src), ("", self.preview), ("Person detection confidence", self.person_conf),
                          ("Greeting cooldown (minutes)", self.cooldown), ("Unknown visitors", self.unknown),
@@ -2637,9 +2732,9 @@ class SettingsDialog(QtWidgets.QDialog):
                          ("Follow-up window (s)", self.follow), ("End-of-speech silence (s)", self.silence),
                          ("Voice provider", self.tts), ("Edge voice", self.edge_voice),
                          ("ElevenLabs voice ID", self.eleven_voice), ("AI provider", self.ai),
-                         ("AI model", self.model), ("Whisper model (restart)", self.whisper)]:
+                         ("OpenAI API key", self.api_key), ("AI model", self.model), ("Whisper model (restart)", self.whisper)]:
             form.addRow(label, w)
-        note = QtWidgets.QLabel("API keys are read from the .env file only (never stored here). Most changes apply immediately.")
+        note = QtWidgets.QLabel("API keys are stored only in the local .env file (never in settings or logs). Most changes apply immediately.")
         note.setWordWrap(True)
         note.setStyleSheet(f"color:{C_DIM};")
         bb = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.StandardButton.Save |
@@ -2661,6 +2756,8 @@ class SettingsDialog(QtWidgets.QDialog):
                       edge_voice=self.edge_voice.text().strip(), elevenlabs_voice_id=self.eleven_voice.text().strip(),
                       ai_provider=self.ai.currentText(), openai_model=self.model.text().strip(),
                       whisper_model=self.whisper.text().strip())
+        if self.api_key.text().strip():
+            env_file_set("OPENAI_API_KEY", self.api_key.text().strip())
         self.core.settings_changed()
         self.accept()
 
@@ -3191,7 +3288,27 @@ def main() -> int:
     app = QtWidgets.QApplication(sys.argv)
     app.setApplicationName("JARVIS")
     app.setStyleSheet(QSS)
+    ppid = int(os.getenv("JARVIS_PARENT_PID", "0") or 0)
+    if ppid:  # launched by the setup stage: quit if the IDE's Stop button killed it, so no camera/mic is left on
+        import psutil
+
+        watch = QTimer()
+        watch.timeout.connect(lambda: None if psutil.pid_exists(ppid) else os._exit(0))  # OS frees camera/mic
+        watch.start(1500)
+        app._watch = watch
     settings = Settings()
+    skip = USERS_DIR / ".skip_key_prompt"
+    if not os.getenv("OPENAI_API_KEY") and not skip.exists():
+        text, accepted = QtWidgets.QInputDialog.getText(
+            None, "JARVIS - AI key",
+            "Paste your OpenAI API key so JARVIS can answer questions.\n"
+            "Create one at https://platform.openai.com/api-keys  (it is stored only in the local .env file).\n\n"
+            "Leave empty to skip: JARVIS still runs, and you can add the key later in Settings.",
+            QtWidgets.QLineEdit.EchoMode.Password)
+        if accepted and text.strip():
+            env_file_set("OPENAI_API_KEY", text.strip())
+        else:
+            skip.write_text("skipped")
     core = JarvisCore(settings)
     win = MainWindow(core, settings)
     win.show()

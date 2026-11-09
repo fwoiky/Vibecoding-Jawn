@@ -14,6 +14,18 @@ jarvis/
 └── README.md
 ```
 
+## Quick start (PyCharm, nothing else to do)
+
+1. In PyCharm create a new Python file, paste the contents of [`run_jarvis.py`](run_jarvis.py), and press **Run**.
+   (Python 3.11 or 3.12, 64-bit, is the safest choice for the PyCharm interpreter.)
+2. The first run downloads JARVIS, builds its own `.venv`, installs every dependency (CUDA PyTorch if you have an
+   NVIDIA GPU) and then opens the dashboard. This takes 5-15 minutes once; later launches take seconds.
+3. When asked, paste your OpenAI API key (or skip; you can add it later under SETTINGS). Press **START ASSISTANT**.
+
+Models (face, YOLO, wake word, speech) download automatically the first time they are needed.
+Windows may ask for camera/microphone permission: Settings -> Privacy & security -> allow desktop apps.
+Everything below is the manual route and explains how things work.
+
 ## 1. What you need
 
 * Windows 11, **Python 3.11 or 3.12** (64-bit) from python.org

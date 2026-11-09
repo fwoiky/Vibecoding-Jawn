@@ -18,7 +18,10 @@ requests>=2.31
 sounddevice>=0.4.6
 faster-whisper>=1.0            # speech-to-text (GPU via CTranslate2 / CPU fallback)
 onnxruntime>=1.17
-openwakeword>=0.6.0            # local "Hey JARVIS" wake word
+openwakeword>=0.6.0            # local "Hey JARVIS" wake word (jarvis.py installs it with --no-deps)
+tqdm
+scipy
+scikit-learn
 
 # --- speech out --------------------------------------------------------------------
 edge-tts>=6.1                  # default voice: free neural voices (internet required)
