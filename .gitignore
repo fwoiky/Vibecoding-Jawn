@@ -11,3 +11,5 @@ users/enrolled_users/*
 !users/enrolled_users/.gitkeep
 users/settings.json
 users/.profile.key
+.jarvis_venv/
+.jarvis_uv/

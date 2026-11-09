@@ -252,7 +252,7 @@ def setup_logging(verbose: bool = False) -> None:
 # =======================================================================================
 # 1. SETTINGS
 # =======================================================================================
-# Secrets (OPENAI_API_KEY, ELEVENLABS_API_KEY) are read ONLY from the environment / .env and
+# Secrets (AI_API_KEY, ELEVENLABS_API_KEY) are read ONLY from the environment / .env and
 # are never written to settings.json. Every key below can be overridden with JARVIS_<NAME>
 # in .env, and from the Settings dialog (saved in users/settings.json).
 DEFAULTS: dict = {
@@ -1766,8 +1766,33 @@ class AIProvider:
         raise NotImplementedError
 
 
+AI_PRESETS = {  # name -> (base URL, default model). Any OpenAI-compatible service works via "Custom".
+    "OpenAI": ("", "gpt-4o-mini"),
+    "Groq (free tier)": ("https://api.groq.com/openai/v1", "llama-3.3-70b-versatile"),
+    "Google Gemini (free tier)": ("https://generativelanguage.googleapis.com/v1beta/openai/", "gemini-2.5-flash"),
+    "OpenRouter": ("https://openrouter.ai/api/v1", "openai/gpt-4o-mini"),
+    "Mistral": ("https://api.mistral.ai/v1", "mistral-small-latest"),
+    "Ollama (local, no key)": ("http://localhost:11434/v1", "llama3.2"),
+    "Custom": ("", ""),
+}
+
+
+def ai_key() -> str:
+    """API key for whichever AI service is configured (AI_API_KEY; OPENAI_API_KEY still accepted)."""
+    return os.getenv("AI_API_KEY") or os.getenv("OPENAI_API_KEY") or ""
+
+
+def ai_base_url() -> str:
+    v = os.environ.get("AI_BASE_URL")
+    return (v if v is not None else os.getenv("OPENAI_BASE_URL", "")).strip()
+
+
+def _is_local(url: str) -> bool:
+    return any(h in url for h in ("localhost", "127.0.0.1", "[::1]"))
+
+
 class OpenAIProvider(AIProvider):
-    """OpenAI Chat Completions (also works with any OpenAI-compatible server via OPENAI_BASE_URL)."""
+    """Any OpenAI-compatible chat service (OpenAI, Groq, Gemini, OpenRouter, Ollama, ...): key + base URL + model."""
 
     name = "openai"
 
@@ -1776,19 +1801,18 @@ class OpenAIProvider(AIProvider):
         self._client = None
 
     def configured(self) -> bool:
-        return bool(os.getenv("OPENAI_API_KEY"))
+        return bool(ai_key()) or _is_local(ai_base_url())  # local servers need no key
 
     def setup_help(self) -> str:
-        return ("No AI key is configured. To enable conversation: create an API key at "
-                "https://platform.openai.com/api-keys, then copy .env.example to .env in the JARVIS "
-                "folder and set OPENAI_API_KEY=your_key. Restart JARVIS afterwards.")
+        return ("No AI key is configured. Open SETTINGS, pick your AI service (OpenAI, Groq, Gemini, OpenRouter, "
+                "Ollama or Custom), paste its API key and press Save. Any OpenAI-compatible service works.")
 
     def _get(self):
         if self._client is None:
             from openai import OpenAI
 
-            self._client = OpenAI(api_key=os.environ["OPENAI_API_KEY"],
-                                  base_url=os.getenv("OPENAI_BASE_URL") or None, timeout=30.0, max_retries=1)
+            self._client = OpenAI(api_key=ai_key() or "not-needed", base_url=ai_base_url() or None,
+                                  timeout=30.0, max_retries=1)
         return self._client
 
     def check(self):
@@ -1819,17 +1843,17 @@ AI_PROVIDERS = {"openai": OpenAIProvider}
 def friendly_ai_error(e: Exception) -> str:
     n = type(e).__name__
     if n == "AuthenticationError":
-        return "the API key was rejected (check OPENAI_API_KEY in .env)"
+        return "the API key was rejected (check the AI key and service in Settings)"
     if n == "RateLimitError":
         m = str(e).lower()
         if "credit" in m or "quota" in m or "billing" in m:
-            return ("your AI account has no credits left. Add credits at platform.openai.com/settings/organization/billing, "
-                    "or switch to a free provider (Settings -> AI base URL)")
+            return ("your AI account has no credits left. Add credits with your provider, "
+                    "or switch to a free service in Settings")
         return "the AI service is rate-limiting requests; try again in a moment"
     if n in ("APIConnectionError", "APITimeoutError", "ConnectError", "ReadTimeout"):
         return "I can't reach the AI service - check the internet connection"
     if n == "NotFoundError":
-        return "that model name isn't available on this account (see OPENAI_MODEL / settings)"
+        return "that model name isn't available on this service (check the AI model in Settings)"
     if n == "ImportError":
         return "the 'openai' package is not installed"
     return f"{n}: {str(e)[:140]}"
@@ -2783,11 +2807,23 @@ class SettingsDialog(QtWidgets.QDialog):
             self.ai.addItem(k)
         self.ai.setCurrentText(s.ai_provider)
         self.model = QtWidgets.QLineEdit(s.openai_model)
-        self.base_url = QtWidgets.QLineEdit(os.getenv("OPENAI_BASE_URL", ""))
-        self.base_url.setPlaceholderText("empty = OpenAI. e.g. https://api.groq.com/openai/v1")
+        self.service = QtWidgets.QComboBox()
+        self.service.addItems(list(AI_PRESETS))
+        self.base_url = QtWidgets.QLineEdit(ai_base_url())
+        self.base_url.setPlaceholderText("empty = OpenAI")
         self.api_key = QtWidgets.QLineEdit()
         self.api_key.setEchoMode(QtWidgets.QLineEdit.EchoMode.Password)
-        self.api_key.setPlaceholderText("saved" if os.getenv("OPENAI_API_KEY") else "paste key (saved to .env)")
+        self.api_key.setPlaceholderText("saved - paste to replace" if ai_key() else "paste your API key (saved to .env)")
+        cur = next((n for n, (u, _m) in AI_PRESETS.items() if u == ai_base_url() and n != "Custom"), "Custom")
+        self.service.setCurrentText(cur)
+
+        def preset(name):
+            url, mdl = AI_PRESETS[name]
+            if name != "Custom":
+                self.base_url.setText(url)
+                self.model.setText(mdl)
+
+        self.service.textActivated.connect(preset)
         self.whisper = QtWidgets.QLineEdit(s.whisper_model)
         for label, w in [("Camera source", self.cam_src), ("", self.preview), ("Person detection confidence", self.person_conf),
                          ("Greeting cooldown (minutes)", self.cooldown), ("Unknown visitors", self.unknown),
@@ -2796,7 +2832,7 @@ class SettingsDialog(QtWidgets.QDialog):
                          ("Follow-up window (s)", self.follow), ("End-of-speech silence (s)", self.silence),
                          ("Voice provider", self.tts), ("Edge voice", self.edge_voice),
                          ("ElevenLabs voice ID", self.eleven_voice), ("AI provider", self.ai),
-                         ("AI base URL (optional)", self.base_url), ("AI API key", self.api_key), ("AI model", self.model), ("Whisper model (restart)", self.whisper)]:
+                         ("AI service", self.service), ("AI base URL", self.base_url), ("AI API key", self.api_key), ("AI model", self.model), ("Whisper model (restart)", self.whisper)]:
             form.addRow(label, w)
         note = QtWidgets.QLabel("API keys are stored only in the local .env file (never in settings or logs). Most changes apply immediately.")
         note.setWordWrap(True)
@@ -2821,9 +2857,9 @@ class SettingsDialog(QtWidgets.QDialog):
                       ai_provider=self.ai.currentText(), openai_model=self.model.text().strip(),
                       whisper_model=self.whisper.text().strip())
         if self.api_key.text().strip():
-            env_file_set("OPENAI_API_KEY", self.api_key.text().strip())
-        if self.base_url.text().strip() != os.getenv("OPENAI_BASE_URL", ""):
-            env_file_set("OPENAI_BASE_URL", self.base_url.text().strip())
+            env_file_set("AI_API_KEY", self.api_key.text().strip())
+        if self.base_url.text().strip() != ai_base_url():
+            env_file_set("AI_BASE_URL", self.base_url.text().strip())
         self.core.settings_changed()
         self.accept()
 
@@ -3331,7 +3367,7 @@ def run_diagnostics() -> int:
             print("  info" if optional else f"  {ok(False)}", mod,
                   "(optional offline voice: pip install piper-tts)" if optional else "(pip install -r requirements.txt)")
     print("\n[Configuration]")
-    print(f"  {ok(bool(os.getenv('OPENAI_API_KEY')))} OPENAI_API_KEY set (needed for AI answers)")
+    print(f"  {ok(bool(ai_key()) or _is_local(ai_base_url()))} AI key set (AI_API_KEY in .env, or via Settings)")
     print(f"  {'OK  ' if os.getenv('ELEVENLABS_API_KEY') else 'info'} ELEVENLABS_API_KEY "
           f"{'set' if os.getenv('ELEVENLABS_API_KEY') else 'not set (optional; Edge voices are the default)'}")
     s = Settings()
@@ -3364,15 +3400,15 @@ def main() -> int:
         app._watch = watch
     settings = Settings()
     skip = USERS_DIR / ".skip_key_prompt"
-    if not os.getenv("OPENAI_API_KEY") and not skip.exists():
+    if not ai_key() and not _is_local(ai_base_url()) and not skip.exists():
         text, accepted = QtWidgets.QInputDialog.getText(
             None, "JARVIS - AI key",
-            "Paste your OpenAI API key so JARVIS can answer questions.\n"
-            "Create one at https://platform.openai.com/api-keys  (it is stored only in the local .env file).\n\n"
-            "Leave empty to skip: JARVIS still runs, and you can add the key later in Settings.",
+            "Paste an API key so JARVIS can answer questions (OpenAI by default).\n"
+            "Using another service (Groq, Gemini, OpenRouter, Ollama...)? Skip this and pick it in SETTINGS.\n"
+            "The key is stored only in the local .env file.",
             QtWidgets.QLineEdit.EchoMode.Password)
         if accepted and text.strip():
-            env_file_set("OPENAI_API_KEY", text.strip())
+            env_file_set("AI_API_KEY", text.strip())
         else:
             skip.write_text("skipped")
     core = JarvisCore(settings)
