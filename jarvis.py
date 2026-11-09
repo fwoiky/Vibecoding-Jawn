@@ -43,6 +43,69 @@ _REQS = [
 ]
 
 
+def _py_version(exe) -> tuple:
+    import subprocess
+
+    try:
+        out = subprocess.check_output([str(exe), "-c", "import sys;print(sys.version_info[0],sys.version_info[1])"],
+                                      text=True, timeout=20)
+        return tuple(int(x) for x in out.split())
+    except Exception:
+        return (0, 0)
+
+
+def _find_python(force_uv: bool = False):
+    """Return a Python >= 3.10 executable (preferring 3.12/3.11), or None."""
+    import shutil
+    from pathlib import Path
+
+    if force_uv:
+        return None
+    if (3, 10) <= sys.version_info[:2] <= (3, 13):
+        return sys.executable
+    cands = []
+    for v in ("3.12", "3.11", "3.13", "3.10"):
+        cands += [shutil.which(f"python{v}"), f"/opt/homebrew/bin/python{v}", f"/usr/local/bin/python{v}",
+                  f"/Library/Frameworks/Python.framework/Versions/{v}/bin/python3",
+                  str(Path.home() / f"AppData/Local/Programs/Python/Python{v.replace('.', '')}/python.exe")]
+    for c in cands:
+        if c and Path(c).exists() and (3, 10) <= _py_version(c) <= (3, 13):
+            return c
+    return None
+
+
+def _ensure_venv(venv, say, force_uv: bool = False):
+    """Create ./.jarvis_venv with Python 3.10-3.13 (downloading Python via `uv` if none is installed)."""
+    import subprocess
+    from pathlib import Path
+
+    venv = Path(venv)
+    py = venv / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+    if py.exists() and (3, 10) <= _py_version(py) <= (3, 13):
+        return py
+    if venv.exists():
+        import shutil
+
+        shutil.rmtree(venv, ignore_errors=True)
+    base = _find_python(force_uv)
+    if base:
+        say(f"Creating private environment with {base} ...")
+        if subprocess.call([base, "-m", "venv", str(venv)]) == 0 and py.exists():
+            return py
+    say("No suitable Python (3.10-3.13) found. Downloading one automatically (one time, ~30 MB)...")
+    tool = venv.parent / ".jarvis_uv"
+    subprocess.call([sys.executable, "-m", "pip", "install", "--disable-pip-version-check", "-q", "--target",
+                     str(tool), "uv"])
+    uv = next((c for c in (tool / "bin/uv", tool / "bin/uv.exe", tool / "Scripts/uv.exe") if c.exists()), None)
+    if uv is None:
+        sys.exit("Could not set up Python automatically. Install Python 3.12 from https://www.python.org/downloads/ "
+                 "and run again.")
+    if subprocess.call([str(uv), "venv", "--seed", "--python", "3.12", str(venv)]) != 0 or not py.exists():
+        sys.exit("Automatic Python download failed. Install Python 3.12 from https://www.python.org/downloads/ "
+                 "and run again.")
+    return py
+
+
 def _bootstrap() -> None:
     if os.environ.get("JARVIS_IN_VENV") == "1" or "--no-bootstrap" in sys.argv:
         if "--no-bootstrap" in sys.argv:
@@ -54,21 +117,15 @@ def _bootstrap() -> None:
     from pathlib import Path
 
     me = Path(__file__).resolve()
-    venv = me.parent / ".venv"
-    py = venv / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+    venv = me.parent / ".jarvis_venv"  # deliberately not ".venv": PyCharm owns that one
     say = lambda m: print(f"[JARVIS setup] {m}", flush=True)
-    if sys.version_info < (3, 10):
-        sys.exit("JARVIS needs Python 3.10 or newer (3.11 / 3.12 recommended).")
-    if not py.exists():
-        say("Creating virtual environment (one time)...")
-        if subprocess.call([sys.executable, "-m", "venv", str(venv)]) != 0 or not py.exists():
-            sys.exit("Could not create the virtual environment. Is the 'venv' module installed for this Python?")
+    py = _ensure_venv(venv, say)
     pip = lambda *a: subprocess.call([str(py), "-m", "pip", "install", "--disable-pip-version-check", *a])
     has_gpu = bool(shutil.which("nvidia-smi")) or os.path.exists(r"C:\Windows\System32\nvidia-smi.exe")
     sig = hashlib.sha256((repr(_REQS) + str(has_gpu)).encode()).hexdigest()
     marker = venv / ".jarvis_deps"
     if not marker.exists() or marker.read_text().strip() != sig:
-        say("Installing dependencies (one time, ~5-15 minutes, several GB with GPU support). Please wait...")
+        say("Installing dependencies (one time, ~5-15 minutes). Please wait...")
         pip("--upgrade", "pip")
         if has_gpu and os.name == "nt":
             say("NVIDIA GPU found: installing the CUDA build of PyTorch...")
@@ -78,8 +135,7 @@ def _bootstrap() -> None:
             else:
                 say("CUDA PyTorch not available; JARVIS will use the CPU for person detection.")
         if pip(*_REQS) != 0 or pip("--no-deps", "openwakeword>=0.6.0") != 0:  # no-deps: skips its Linux-only tflite pin
-            sys.exit("Dependency installation failed - see the messages above. If it mentions a missing wheel, "
-                     "install Python 3.11 or 3.12 (64-bit) and run again.")
+            sys.exit("Dependency installation failed - see the messages above.")
         if has_gpu:
             pip("nvidia-cublas-cu12", "nvidia-cudnn-cu12==9.*")  # GPU speech recognition; optional
         marker.write_text(sig)
