@@ -1782,9 +1782,22 @@ def ai_key() -> str:
     return os.getenv("AI_API_KEY") or os.getenv("OPENAI_API_KEY") or ""
 
 
+def normalize_base_url(v: str) -> str:
+    """Forgiving cleanup: adds https:// when missing, strips quotes/whitespace and a pasted /chat/completions."""
+    v = (v or "").strip().strip("\"'").strip()
+    if not v:
+        return ""
+    if "://" not in v:
+        v = ("http://" if _is_local(v) else "https://") + v
+    for tail in ("/chat/completions", "/completions"):
+        if v.rstrip("/").endswith(tail):
+            v = v.rstrip("/")[: -len(tail)]
+    return v.rstrip("/") if not v.endswith("/v1beta/openai/") else v
+
+
 def ai_base_url() -> str:
     v = os.environ.get("AI_BASE_URL")
-    return (v if v is not None else os.getenv("OPENAI_BASE_URL", "")).strip()
+    return normalize_base_url(v if v is not None else os.getenv("OPENAI_BASE_URL", ""))
 
 
 def _is_local(url: str) -> bool:
@@ -1878,7 +1891,12 @@ def friendly_ai_error(e: Exception) -> str:
                     "or switch to a free service in Settings")
         return "the AI service is rate-limiting requests; try again in a moment"
     if n in ("APIConnectionError", "APITimeoutError", "ConnectError", "ReadTimeout"):
-        return "I can't reach the AI service - check the internet connection"
+        root, hops = e, 0
+        while root.__cause__ is not None and hops < 6:
+            root, hops = root.__cause__, hops + 1
+        host = (ai_base_url() or "api.openai.com").split("//")[-1].split("/")[0]
+        why = f"{type(root).__name__}: {str(root)[:110]}" if root is not e else "no further detail"
+        return f"I can't reach {host} ({why}). Check the AI base URL in Settings and your internet connection"
     if n == "ModelNotFound":
         return str(e)
     if n == "NotFoundError":
@@ -2890,7 +2908,7 @@ class SettingsDialog(QtWidgets.QDialog):
         key = self.api_key.text().strip() or ai_key()
         QtWidgets.QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
         try:
-            ids = OpenAIProvider.list_models(key, self.base_url.text().strip())
+            ids = OpenAIProvider.list_models(key, normalize_base_url(self.base_url.text()))
             cur = self.model.currentText()
             self.model.clear()
             self.model.addItems(ids)
@@ -2914,8 +2932,8 @@ class SettingsDialog(QtWidgets.QDialog):
                       whisper_model=self.whisper.text().strip())
         if self.api_key.text().strip():
             env_file_set("AI_API_KEY", self.api_key.text().strip())
-        if self.base_url.text().strip() != ai_base_url():
-            env_file_set("AI_BASE_URL", self.base_url.text().strip())
+        if normalize_base_url(self.base_url.text()) != ai_base_url():
+            env_file_set("AI_BASE_URL", normalize_base_url(self.base_url.text()))
         self.core.settings_changed()
         self.accept()
 
