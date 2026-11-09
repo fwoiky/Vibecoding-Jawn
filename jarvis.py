@@ -1791,6 +1791,10 @@ def _is_local(url: str) -> bool:
     return any(h in url for h in ("localhost", "127.0.0.1", "[::1]"))
 
 
+class ModelNotFound(Exception):
+    pass
+
+
 class OpenAIProvider(AIProvider):
     """Any OpenAI-compatible chat service (OpenAI, Groq, Gemini, OpenRouter, Ollama, ...): key + base URL + model."""
 
@@ -1822,8 +1826,31 @@ class OpenAIProvider(AIProvider):
         except Exception as e:
             return False, friendly_ai_error(e)
 
+    @staticmethod
+    def list_models(key: str = "", base: str = "") -> list:
+        """Chat-capable model ids offered by the service (used by Settings and by the 404 hint)."""
+        from openai import OpenAI
+
+        c = OpenAI(api_key=key or ai_key() or "not-needed", base_url=(base or ai_base_url()) or None,
+                   timeout=15.0, max_retries=0)
+        ids = sorted({m.id for m in c.models.list()})
+        skip = ("whisper", "embed", "tts", "moderation", "guard", "dall-e", "image", "transcribe", "rerank")
+        return [i for i in ids if not any(w in i.lower() for w in skip)] or ids
+
     def stream_chat(self, messages, cancel):
-        stream = self._get().chat.completions.create(model=self.s.openai_model, messages=messages, stream=True)
+        try:
+            stream = self._get().chat.completions.create(model=self.s.openai_model, messages=messages, stream=True)
+        except Exception as e:
+            if type(e).__name__ != "NotFoundError":
+                raise
+            host = (ai_base_url() or "api.openai.com").split("//")[-1].split("/")[0]
+            try:
+                avail = ", ".join(self.list_models()[:8])
+            except Exception:
+                avail = ""
+            raise ModelNotFound(f"the model '{self.s.openai_model}' isn't available on {host}."
+                                + (f" Models you can use: {avail}. Pick one in Settings (Fetch models)." if avail
+                                   else " Open Settings and choose a model that this service offers.")) from e
         try:
             for chunk in stream:
                 if cancel.is_set():
@@ -1852,6 +1879,8 @@ def friendly_ai_error(e: Exception) -> str:
         return "the AI service is rate-limiting requests; try again in a moment"
     if n in ("APIConnectionError", "APITimeoutError", "ConnectError", "ReadTimeout"):
         return "I can't reach the AI service - check the internet connection"
+    if n == "ModelNotFound":
+        return str(e)
     if n == "NotFoundError":
         return "that model name isn't available on this service (check the AI model in Settings)"
     if n == "ImportError":
@@ -2806,7 +2835,18 @@ class SettingsDialog(QtWidgets.QDialog):
         for k in AI_PROVIDERS:
             self.ai.addItem(k)
         self.ai.setCurrentText(s.ai_provider)
-        self.model = QtWidgets.QLineEdit(s.openai_model)
+        self.model = QtWidgets.QComboBox()
+        self.model.setEditable(True)
+        self.model.setEditText(s.openai_model)
+        self.fetch_btn = QtWidgets.QPushButton("FETCH MODELS")
+        self.fetch_btn.setToolTip("Ask the selected service which models your key can use")
+        self.fetch_btn.clicked.connect(self._fetch_models)
+        model_row = QtWidgets.QHBoxLayout()
+        model_row.setContentsMargins(0, 0, 0, 0)
+        model_row.addWidget(self.model, 1)
+        model_row.addWidget(self.fetch_btn)
+        model_box = QtWidgets.QWidget()
+        model_box.setLayout(model_row)
         self.service = QtWidgets.QComboBox()
         self.service.addItems(list(AI_PRESETS))
         self.base_url = QtWidgets.QLineEdit(ai_base_url())
@@ -2821,7 +2861,7 @@ class SettingsDialog(QtWidgets.QDialog):
             url, mdl = AI_PRESETS[name]
             if name != "Custom":
                 self.base_url.setText(url)
-                self.model.setText(mdl)
+                self.model.setEditText(mdl)
 
         self.service.textActivated.connect(preset)
         self.whisper = QtWidgets.QLineEdit(s.whisper_model)
@@ -2832,7 +2872,7 @@ class SettingsDialog(QtWidgets.QDialog):
                          ("Follow-up window (s)", self.follow), ("End-of-speech silence (s)", self.silence),
                          ("Voice provider", self.tts), ("Edge voice", self.edge_voice),
                          ("ElevenLabs voice ID", self.eleven_voice), ("AI provider", self.ai),
-                         ("AI service", self.service), ("AI base URL", self.base_url), ("AI API key", self.api_key), ("AI model", self.model), ("Whisper model (restart)", self.whisper)]:
+                         ("AI service", self.service), ("AI base URL", self.base_url), ("AI API key", self.api_key), ("AI model", model_box), ("Whisper model (restart)", self.whisper)]:
             form.addRow(label, w)
         note = QtWidgets.QLabel("API keys are stored only in the local .env file (never in settings or logs). Most changes apply immediately.")
         note.setWordWrap(True)
@@ -2846,6 +2886,22 @@ class SettingsDialog(QtWidgets.QDialog):
         lay.addWidget(note)
         lay.addWidget(bb)
 
+    def _fetch_models(self) -> None:
+        key = self.api_key.text().strip() or ai_key()
+        QtWidgets.QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        try:
+            ids = OpenAIProvider.list_models(key, self.base_url.text().strip())
+            cur = self.model.currentText()
+            self.model.clear()
+            self.model.addItems(ids)
+            self.model.setEditText(cur if cur in ids else (ids[0] if ids else cur))
+            QtWidgets.QToolTip.showText(self.fetch_btn.mapToGlobal(self.fetch_btn.rect().bottomLeft()),
+                                        f"{len(ids)} models found - pick one")
+        except Exception as e:
+            QtWidgets.QMessageBox.warning(self, "Fetch models", f"Could not list models: {friendly_ai_error(e)}")
+        finally:
+            QtWidgets.QApplication.restoreOverrideCursor()
+
     def _save(self) -> None:
         self.s.update(camera_source=self.cam_src.text().strip() or "0", preview=self.preview.isChecked(),
                       person_conf=self.person_conf.value(), greeting_cooldown_min=self.cooldown.value(),
@@ -2854,7 +2910,7 @@ class SettingsDialog(QtWidgets.QDialog):
                       wake_threshold=self.wake.value(), followup_seconds=self.follow.value(),
                       silence_end_seconds=self.silence.value(), tts_provider=self.tts.currentText(),
                       edge_voice=self.edge_voice.text().strip(), elevenlabs_voice_id=self.eleven_voice.text().strip(),
-                      ai_provider=self.ai.currentText(), openai_model=self.model.text().strip(),
+                      ai_provider=self.ai.currentText(), openai_model=self.model.currentText().strip(),
                       whisper_model=self.whisper.text().strip())
         if self.api_key.text().strip():
             env_file_set("AI_API_KEY", self.api_key.text().strip())
